@@ -265,4 +265,33 @@ class BillingQueueIntegrationTest {
         val updatedCatalogItem = catalogDao.getById(itemId)
         assertEquals(66L, updatedCatalogItem?.stockBaseUnits)
     }
+
+    @Test
+    fun testVoidBill_writesReverseVoidMovementsAndDoesNotDelete() = runBlocking {
+        val lines = listOf(
+            CartLine(stockItem.id, stockItem.name, 4L, stockItem.unit, stockItem.pricePaise, InventoryType.STOCK)
+        )
+        val commitRes = billingQueue.enqueueCommit(lines, PaymentMode.CASH, 2000L)
+        assertTrue(commitRes is BillingQueue.CommitResult.Success)
+        val billId = (commitRes as BillingQueue.CommitResult.Success).bill.id
+
+        // Stock decreased: 50 - 4 = 46
+        assertEquals(46L, catalogDao.getById(stockItem.id)?.stockBaseUnits)
+
+        // Void the bill
+        val voided = repository.voidBill(billId)
+        assertTrue(voided)
+
+        // Stock restored to 50
+        assertEquals(50L, catalogDao.getById(stockItem.id)?.stockBaseUnits)
+
+        // Bill record still exists but marked VOIDED (never deleted)
+        val bill = billDao.getBillById(billId)
+        assertNotNull(bill)
+        assertEquals(BillStatus.VOIDED, bill?.status)
+
+        // Movements ledger contains reverse VOID movement
+        val movements = stockMovementDao.getMovementsForItem(stockItem.id).first()
+        assertTrue(movements.any { it.reason == MovementReason.VOID && it.deltaBaseUnits == 4L })
+    }
 }

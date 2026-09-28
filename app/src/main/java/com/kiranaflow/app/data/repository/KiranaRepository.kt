@@ -67,6 +67,9 @@ class KiranaRepository @Inject constructor(
         return billingQueue.enqueueCommit(cartLines, paymentMode, tenderedPaise)
     }
 
+    suspend fun voidBill(billId: String, reason: String = "Customer Void"): Boolean =
+        billingQueue.voidBill(billId, reason)
+
     // ─── Draft Cart (Crash Resilience) ──────────────────────────────────────
 
     suspend fun saveDraftCart(cart: Cart) {

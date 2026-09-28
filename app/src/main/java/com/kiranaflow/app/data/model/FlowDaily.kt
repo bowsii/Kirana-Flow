@@ -25,5 +25,8 @@ data class FlowDaily(
     val itemId: String,
     val businessDate: String,
     val soldBaseUnits: Long = 0L,
-    val updatedAt: Long = System.currentTimeMillis()
+    val deviceId: String = "DEV_01",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val deletedAt: Long? = null
 )

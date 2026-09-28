@@ -17,8 +17,8 @@ interface FlowDailyDao {
     suspend fun getFlowDaily(itemId: String, businessDate: String): FlowDaily?
 
     @Query("""
-        INSERT INTO flow_daily (id, itemId, businessDate, soldBaseUnits, updatedAt)
-        VALUES (:id, :itemId, :businessDate, :deltaBaseUnits, :timestamp)
+        INSERT INTO flow_daily (id, itemId, businessDate, soldBaseUnits, deviceId, createdAt, updatedAt)
+        VALUES (:id, :itemId, :businessDate, :deltaBaseUnits, 'DEV_01', :timestamp, :timestamp)
         ON CONFLICT(itemId, businessDate) DO UPDATE SET
             soldBaseUnits = soldBaseUnits + :deltaBaseUnits,
             updatedAt = :timestamp

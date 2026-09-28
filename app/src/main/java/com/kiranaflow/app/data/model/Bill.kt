@@ -124,7 +124,10 @@ data class BillItem(
 
     val inventoryType: InventoryType = InventoryType.STOCK,
 
-    val createdAt: Long = System.currentTimeMillis()
+    val deviceId: String = "DEV_01",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val deletedAt: Long? = null
 ) {
     val pricePerUnit: Double get() = pricePerUnitPaise / 100.0
     val lineTotal: Double get() = lineTotalPaise / 100.0

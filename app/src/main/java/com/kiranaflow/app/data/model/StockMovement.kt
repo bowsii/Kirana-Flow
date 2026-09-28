@@ -33,5 +33,8 @@ data class StockMovement(
     val reason: MovementReason,
     val refId: String = "",
     val businessDate: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val deviceId: String = "DEV_01",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val deletedAt: Long? = null
 )

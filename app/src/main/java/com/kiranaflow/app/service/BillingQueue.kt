@@ -242,7 +242,55 @@ class BillingQueue @Inject constructor(
                 val payload = Json.decodeFromString<JournalPayload>(entry.payloadJson)
                 applyJournalTransaction(entry.journalId, payload)
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * Voids a committed bill by writing reverse VOID movements to the ledger
+     * and incrementing stock / reversing flow daily sales.
+     * The bill record is never deleted.
+     */
+    suspend fun voidBill(billId: String, reason: String = "Customer Void"): Boolean {
+        return db.withTransaction {
+            val bill = billDao.getBillById(billId) ?: return@withTransaction false
+            if (bill.status == BillStatus.VOIDED) return@withTransaction false
+
+            val items = billDao.getItemsForBill(billId)
+            val now = System.currentTimeMillis()
+            val businessDate = businessDayManager.getBusinessDate(now)
+
+            items.forEach { item ->
+                when (item.inventoryType) {
+                    InventoryType.STOCK -> {
+                        val reverseMovement = StockMovement(
+                            id = UuidV7.generate(),
+                            itemId = item.catalogItemId,
+                            deltaBaseUnits = item.quantityBaseUnits, // Add back to stock
+                            reason = MovementReason.VOID,
+                            refId = bill.id,
+                            businessDate = businessDate,
+                            createdAt = now
+                        )
+                        stockMovementDao.insertMovement(reverseMovement)
+                        catalogDao.decrementStock(item.catalogItemId, -item.quantityBaseUnits, now)
+                    }
+                    InventoryType.FLOW -> {
+                        flowDailyDao.recordFlowSale(
+                            id = UuidV7.generate(),
+                            itemId = item.catalogItemId,
+                            businessDate = businessDate,
+                            deltaBaseUnits = -item.quantityBaseUnits,
+                            timestamp = now
+                        )
+                    }
+                }
+            }
+
+            billDao.updateBill(bill.copy(status = BillStatus.VOIDED, updatedAt = now))
+            true
+        }
     }
 
     private fun generateBillNumber(): String {

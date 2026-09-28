@@ -35,6 +35,8 @@ data class BillJournal(
     val billId: String,
     val payloadJson: String,
     val status: JournalStatus = JournalStatus.PENDING,
+    val deviceId: String = "DEV_01",
     val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
     val appliedAt: Long? = null
 )
