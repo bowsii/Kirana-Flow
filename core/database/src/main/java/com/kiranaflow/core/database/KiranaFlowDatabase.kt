@@ -9,6 +9,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
+
 @Database(
     entities = [
         CatalogItem::class,
@@ -33,8 +35,20 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
     abstract fun draftCartDao(): DraftCartDao
 
     companion object {
+        init {
+            try {
+                System.loadLibrary("sqlcipher")
+            } catch (_: UnsatisfiedLinkError) {
+                // Handled in environments where native libs are bundled or mocked
+            }
+        }
+
         @Volatile
         private var INSTANCE: KiranaFlowDatabase? = null
+
+        fun resetInstanceForTesting() {
+            INSTANCE = null
+        }
 
         val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -95,13 +109,19 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
             }
         }
 
-        fun getInstance(context: Context): KiranaFlowDatabase {
+        fun getInstance(
+            context: Context,
+            securityManager: DatabaseSecurityManager = DatabaseSecurityManager(context.applicationContext)
+        ): KiranaFlowDatabase {
             return INSTANCE ?: synchronized(this) {
+                val passphrase = securityManager.getDatabasePassphrase()
+                val factory = SupportOpenHelperFactory(passphrase)
                 Room.databaseBuilder(
                     context.applicationContext,
                     KiranaFlowDatabase::class.java,
                     "kiranaflow.db"
                 )
+                    .openHelperFactory(factory)
                     .addMigrations(MIGRATION_1_2)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {

@@ -14,8 +14,11 @@ object DatabaseModule {
 
     @Singleton
     @Provides
-    fun provideDatabase(@ApplicationContext ctx: Context): KiranaFlowDatabase =
-        KiranaFlowDatabase.getInstance(ctx)
+    fun provideDatabase(
+        @ApplicationContext ctx: Context,
+        securityManager: DatabaseSecurityManager
+    ): KiranaFlowDatabase =
+        KiranaFlowDatabase.getInstance(ctx, securityManager)
 
     @Singleton
     @Provides

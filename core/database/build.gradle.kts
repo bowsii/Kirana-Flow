@@ -12,5 +12,10 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:model"))
     implementation(libs.kotlinx.serialization.json)
-    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
+    api("net.zetetic:sqlcipher-android:4.6.1")
+
+    testImplementation(libs.junit)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
