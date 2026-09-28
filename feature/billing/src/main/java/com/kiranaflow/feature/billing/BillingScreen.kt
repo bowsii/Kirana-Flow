@@ -65,7 +65,8 @@ fun BillingScreen(
             BillingTopBar(
                 billNumber  = "#1049",
                 itemCount   = state.cart.itemCount,
-                isListening = state.isListening
+                isListening = state.isListening,
+                voiceStatus = state.systemVoiceStatus
             )
         },
         bottomBar = {
@@ -161,8 +162,25 @@ fun BillingScreen(
 fun BillingTopBar(
     billNumber: String,
     itemCount: Int,
-    isListening: Boolean
+    isListening: Boolean,
+    voiceStatus: SystemVoiceStatus = SystemVoiceStatus()
 ) {
+    val statusDotColor: Color = when {
+        !voiceStatus.hasMicPermission -> KfWarning
+        !voiceStatus.isRecognizerAvailable -> KfWarning
+        isListening -> KfLive
+        voiceStatus.isOfflineTamilPackInstalled -> KfSuccess
+        else -> KfSuccess
+    }
+
+    val statusLabel: String = when {
+        !voiceStatus.hasMicPermission -> "MIC PERMISSION REQUIRED"
+        !voiceStatus.isRecognizerAvailable -> "ASR UNAVAILABLE"
+        isListening -> "LISTENING…"
+        voiceStatus.isOfflineTamilPackInstalled -> "OFFLINE TAMIL READY"
+        else -> "OFFLINE READY"
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -172,11 +190,15 @@ fun BillingTopBar(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // OFFLINE READY status
+            // Real system voice status
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(KfSuccess))
+                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(statusDotColor))
                 Spacer(Modifier.width(6.dp))
-                Text("OFFLINE READY", color = KfSuccess, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
+                Text(
+                    statusLabel,
+                    color = statusDotColor,
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                )
             }
             Spacer(Modifier.width(10.dp))
             Text("Billing", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = KfTextDark)
@@ -184,7 +206,7 @@ fun BillingTopBar(
             KfTopBarActions()
         }
 
-        // Bill pill row
+        // Bill pill & real capability status pills row
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).padding(bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -208,25 +230,71 @@ fun BillingTopBar(
                     )
                 }
             }
-            Spacer(Modifier.width(8.dp))
-            // LIVE badge
+            Spacer(Modifier.width(6.dp))
+
+            // Mic Permission pill
             Surface(
-                color  = KfLive.copy(alpha = 0.12f),
+                color  = if (voiceStatus.hasMicPermission) KfSuccess.copy(alpha = 0.12f) else KfWarning.copy(alpha = 0.12f),
                 shape  = RoundedCornerShape(6.dp),
-                border = BorderStroke(1.dp, KfLive.copy(alpha = 0.4f))
+                border = BorderStroke(1.dp, if (voiceStatus.hasMicPermission) KfSuccess.copy(alpha = 0.4f) else KfWarning.copy(alpha = 0.4f))
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("LIVE", color = KfLive, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = 0.5.sp))
+                    Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(if (voiceStatus.hasMicPermission) KfSuccess else KfWarning))
                     Spacer(Modifier.width(4.dp))
-                    Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(KfLive))
+                    Text(
+                        if (voiceStatus.hasMicPermission) "MIC OK" else "MIC REQ",
+                        color = if (voiceStatus.hasMicPermission) KfSuccess else KfWarning,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                    )
                 }
             }
+            Spacer(Modifier.width(6.dp))
+
+            // Tamil Offline Pack pill
+            Surface(
+                color  = if (voiceStatus.isOfflineTamilPackInstalled) KfSuccess.copy(alpha = 0.12f) else KfWarning.copy(alpha = 0.12f),
+                shape  = RoundedCornerShape(6.dp),
+                border = BorderStroke(1.dp, if (voiceStatus.isOfflineTamilPackInstalled) KfSuccess.copy(alpha = 0.4f) else KfWarning.copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.size(5.dp).clip(CircleShape).background(if (voiceStatus.isOfflineTamilPackInstalled) KfSuccess else KfWarning))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        if (voiceStatus.isOfflineTamilPackInstalled) "TAMIL PACK" else "NO TAMIL",
+                        color = if (voiceStatus.isOfflineTamilPackInstalled) KfSuccess else KfWarning,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                    )
+                }
+            }
+            Spacer(Modifier.width(6.dp))
+
+            // LIVE / Listening badge
+            if (isListening) {
+                Surface(
+                    color  = KfLive.copy(alpha = 0.12f),
+                    shape  = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, KfLive.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("LIVE", color = KfLive, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = 0.5.sp))
+                        Spacer(Modifier.width(4.dp))
+                        Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(KfLive))
+                    }
+                }
+            }
+
             Spacer(Modifier.weight(1f))
             Text(
-                "Counter 1  •  $itemCount items verified",
+                "Counter 1 • $itemCount items",
                 color = KfTextLight,
                 style = MaterialTheme.typography.bodySmall
             )

@@ -33,7 +33,8 @@ fun KiranaFlowNavGraph(navController: NavHostController = rememberNavController(
             val state by billingVm.uiState.collectAsState()
 
             SpeakScreen(
-                statusText       = if (state.isListening) "LISTENING" else "MIC READY",
+                statusText       = if (state.isListening) "LISTENING…" else "",
+                voiceStatus      = state.systemVoiceStatus,
                 lastBillNumber   = "#${(System.currentTimeMillis() % 10000).toInt()}",
                 lastBillAmount   = "74",
                 onMicTap         = {

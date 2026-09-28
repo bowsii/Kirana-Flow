@@ -29,7 +29,8 @@ import com.kiranaflow.core.ui.theme.*
  */
 @Composable
 fun SpeakScreen(
-    statusText: String = "MIC READY",
+    statusText: String = "",
+    voiceStatus: SystemVoiceStatus = SystemVoiceStatus(),
     lastBillNumber: String = "",
     lastBillAmount: String = "",
     onMicTap: () -> Unit,
@@ -41,7 +42,7 @@ fun SpeakScreen(
     Scaffold(
         containerColor = KfBgSand,
         topBar = {
-            KfSpeakTopBar(statusText = statusText)
+            KfSpeakTopBar(statusText = statusText, voiceStatus = voiceStatus)
         },
         bottomBar = {
             KfBottomBar(
@@ -125,7 +126,28 @@ fun SpeakScreen(
 // ─── Top Bar ──────────────────────────────────────────────────────────────────
 
 @Composable
-private fun KfSpeakTopBar(statusText: String) {
+private fun KfSpeakTopBar(
+    statusText: String,
+    voiceStatus: SystemVoiceStatus
+) {
+    val dotColor: Color = when {
+        statusText.isNotBlank() -> if (voiceStatus.isListening) KfLive else KfSuccess
+        !voiceStatus.hasMicPermission -> KfWarning
+        !voiceStatus.isRecognizerAvailable -> KfWarning
+        voiceStatus.isListening -> KfLive
+        voiceStatus.isOfflineTamilPackInstalled -> KfSuccess
+        else -> KfSuccess
+    }
+
+    val resolvedText: String = when {
+        statusText.isNotBlank() -> statusText
+        !voiceStatus.hasMicPermission -> "MIC PERMISSION REQUIRED"
+        !voiceStatus.isRecognizerAvailable -> "ASR UNAVAILABLE"
+        voiceStatus.isListening -> "LISTENING…"
+        voiceStatus.isOfflineTamilPackInstalled -> "OFFLINE TAMIL READY"
+        else -> "MIC READY"
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -147,12 +169,12 @@ private fun KfSpeakTopBar(statusText: String) {
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(KfSuccess)
+                        .background(dotColor)
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    statusText,
-                    color = KfSuccess,
+                    resolvedText,
+                    color = dotColor,
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
                 )
             }

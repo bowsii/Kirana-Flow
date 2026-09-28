@@ -38,6 +38,7 @@ val KfOnline          = Color(0xFF4CAF50)   // ONLINE dot
 val KfLive            = Color(0xFF4CAF50)   // LIVE indicator
 val KfSynced          = Color(0xFF4CAF50)   // SYNCED status
 val KfSuccess         = Color(0xFF4CAF50)
+val KfWarning         = KfAmber
 val KfOkBadge         = Color(0xFF2E7D32)   // ✓ OK badge text
 val KfOkBadgeBg       = Color(0xFFE8F5E9)   // ✓ OK badge background
 val KfError           = Color(0xFFE53E3E)   // error / low stock

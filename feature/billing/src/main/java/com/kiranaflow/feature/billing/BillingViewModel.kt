@@ -28,13 +28,25 @@ data class BillingUiState(
     val commitSuccess: Boolean = false,
     val showPaymentSheet: Boolean = false,
     val paymentMode: PaymentMode = PaymentMode.CASH,
-    val tenderedAmount: String = ""
-)
+    val tenderedAmount: String = "",
+    val hasMicPermission: Boolean = false,
+    val isRecognizerAvailable: Boolean = false,
+    val isOfflineTamilPackInstalled: Boolean = false
+) {
+    val systemVoiceStatus: SystemVoiceStatus
+        get() = SystemVoiceStatus(
+            hasMicPermission = hasMicPermission,
+            isRecognizerAvailable = isRecognizerAvailable,
+            isOfflineTamilPackInstalled = isOfflineTamilPackInstalled,
+            isListening = isListening
+        )
+}
 
 @HiltViewModel
 class BillingViewModel @Inject constructor(
     private val repository: KiranaRepository,
     private val voiceService: VoiceRecognitionService,
+    private val voiceStateMonitor: VoiceStateMonitor,
     private val vibrator: Vibrator,
     private val addItemFromVoiceUseCase: AddItemFromVoiceUseCase,
     private val removeLastItemUseCase: RemoveLastItemUseCase,
@@ -68,6 +80,19 @@ class BillingViewModel @Inject constructor(
             }
         }
 
+        // Observe real voice system status
+        viewModelScope.launch {
+            voiceStateMonitor.status.collect { status ->
+                _uiState.update {
+                    it.copy(
+                        hasMicPermission = status.hasMicPermission,
+                        isRecognizerAvailable = status.isRecognizerAvailable,
+                        isOfflineTamilPackInstalled = status.isOfflineTamilPackInstalled
+                    )
+                }
+            }
+        }
+
         // WAL recovery on startup
         viewModelScope.launch {
             recoverPendingBillsUseCase()
@@ -76,12 +101,19 @@ class BillingViewModel @Inject constructor(
 
     // ─── Voice ──────────────────────────────────────────────────────────────
 
+    fun refreshVoiceStatus() {
+        voiceStateMonitor.refreshStatus(_uiState.value.isListening)
+    }
+
     fun toggleListening() {
+        voiceStateMonitor.refreshStatus(_uiState.value.isListening)
         if (_uiState.value.isListening) {
             voiceService.stopListening()
+            voiceStateMonitor.setListening(false)
             _uiState.update { it.copy(isListening = false, voiceText = "") }
         } else {
             voiceService.startListening()
+            voiceStateMonitor.setListening(true)
             _uiState.update { it.copy(isListening = true, lastError = null) }
         }
     }
@@ -94,16 +126,20 @@ class BillingViewModel @Inject constructor(
     private fun handleVoiceState(state: VoiceRecognitionService.VoiceState) {
         when (state) {
             is VoiceRecognitionService.VoiceState.Listening -> {
+                voiceStateMonitor.setListening(true)
                 _uiState.update { it.copy(isListening = true, voiceText = "Listening…") }
             }
             is VoiceRecognitionService.VoiceState.Recognised -> {
-                _uiState.update { it.copy(voiceText = state.text) }
+                voiceStateMonitor.setListening(false)
+                _uiState.update { it.copy(isListening = false, voiceText = state.text) }
                 processCommand(state.command)
             }
             is VoiceRecognitionService.VoiceState.Error -> {
+                voiceStateMonitor.setListening(false)
                 _uiState.update { it.copy(isListening = false, lastError = state.message, voiceText = "") }
             }
             VoiceRecognitionService.VoiceState.Idle -> {
+                voiceStateMonitor.setListening(false)
                 _uiState.update { it.copy(isListening = false) }
             }
         }
