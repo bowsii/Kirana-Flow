@@ -294,4 +294,46 @@ class BillingQueueIntegrationTest {
         val movements = stockMovementDao.getMovementsForItem(stockItem.id).first()
         assertTrue(movements.any { it.reason == MovementReason.VOID && it.deltaBaseUnits == 4L })
     }
+
+    @Test
+    fun testCloseBusinessDay_snapshotsFlowAndProducesCorrectSummaryAndReorderList() = runBlocking {
+        // Bill 1: 2 Parle-G (Cash ₹10.00)
+        billingQueue.enqueueCommit(
+            listOf(CartLine(stockItem.id, stockItem.name, 2L, stockItem.unit, stockItem.pricePaise, InventoryType.STOCK)),
+            PaymentMode.CASH,
+            1000L
+        )
+
+        // Bill 2: 40 Parle-G (UPI ₹200.00) -> brings remaining stock to 8 <= threshold (10)
+        billingQueue.enqueueCommit(
+            listOf(CartLine(stockItem.id, stockItem.name, 40L, stockItem.unit, stockItem.pricePaise, InventoryType.STOCK)),
+            PaymentMode.UPI,
+            20000L
+        )
+
+        // Bill 3: 1500 ml (1.5 L) Milk (Cash ₹42.00)
+        billingQueue.enqueueCommit(
+            listOf(CartLine(flowItem.id, flowItem.name, 1500L, flowItem.unit, flowItem.pricePaise, InventoryType.FLOW)),
+            PaymentMode.CASH,
+            4200L
+        )
+
+        val summary = repository.closeBusinessDay()
+
+        assertEquals(25200L, summary.totalRevenuePaise)
+        assertEquals(5200L, summary.cashRevenuePaise)
+        assertEquals(20000L, summary.upiRevenuePaise)
+        assertEquals(3, summary.totalBills)
+
+        // FLOW purchase plan contains Amul Milk with 1.5 L
+        val milkPlan = summary.flowPurchasePlan.find { it.itemId == flowItem.id }
+        assertNotNull(milkPlan)
+        assertEquals(1500L, milkPlan?.soldBaseUnits)
+        assertEquals(1.5, milkPlan?.suggestedPurchaseDisplayUnits ?: 0.0, 0.001)
+
+        // STOCK reorder list contains Parle-G (stock 8 <= threshold 10)
+        val reorderParleG = summary.stockReorderList.find { it.id == stockItem.id }
+        assertNotNull(reorderParleG)
+        assertEquals(8L, reorderParleG?.stockBaseUnits)
+    }
 }

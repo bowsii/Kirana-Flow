@@ -169,11 +169,11 @@ fun BillingTopBar(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // SYNCED dot
+            // OFFLINE READY status
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(KfSynced))
+                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(KfSuccess))
                 Spacer(Modifier.width(6.dp))
-                Text("SYNCED", color = KfSynced, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
+                Text("OFFLINE READY", color = KfSuccess, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
             }
             Spacer(Modifier.width(10.dp))
             Text("Billing", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = KfTextDark)

@@ -45,6 +45,9 @@ interface CatalogDao {
     @Query("SELECT * FROM catalog_items WHERE inventoryType = 'STOCK' AND stockBaseUnits <= reorderThresholdBaseUnits AND isActive = 1 AND deletedAt IS NULL")
     fun getLowStockItems(): Flow<List<CatalogItem>>
 
+    @Query("SELECT * FROM catalog_items WHERE inventoryType = 'STOCK' AND stockBaseUnits <= reorderThresholdBaseUnits AND isActive = 1 AND deletedAt IS NULL")
+    suspend fun getLowStockItemsList(): List<CatalogItem>
+
     @Query("UPDATE catalog_items SET deletedAt = :now, isActive = 0 WHERE id = :id")
     suspend fun softDelete(id: String, now: Long = System.currentTimeMillis())
 

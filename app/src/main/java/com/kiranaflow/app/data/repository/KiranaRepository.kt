@@ -97,6 +97,45 @@ class KiranaRepository @Inject constructor(
     fun getFlowDailyForDate(date: String = businessDayManager.getBusinessDate()): Flow<List<FlowDaily>> =
         flowDailyDao.getFlowDailyForDate(date)
 
+    suspend fun getFlowPurchasePlan(businessDate: String = businessDayManager.getBusinessDate()): List<FlowPurchasePlanItem> {
+        val flowRecords = flowDailyDao.getFlowDailyListForDate(businessDate)
+        return flowRecords.mapNotNull { record ->
+            val catalogItem = catalogDao.getById(record.itemId)
+            if (catalogItem != null && record.soldBaseUnits > 0) {
+                val displayQty = record.soldBaseUnits.toDouble() / catalogItem.displayUnit.multiplierToBase
+                FlowPurchasePlanItem(
+                    itemId = record.itemId,
+                    itemName = catalogItem.name,
+                    soldBaseUnits = record.soldBaseUnits,
+                    suggestedPurchaseDisplayUnits = displayQty,
+                    displayUnit = catalogItem.displayUnit.name
+                )
+            } else null
+        }
+    }
+
+    suspend fun getStockReorderList(): List<CatalogItem> =
+        catalogDao.getLowStockItemsList()
+
+    suspend fun closeBusinessDay(businessDate: String = businessDayManager.getBusinessDate()): DaySummary {
+        val totalRevenuePaise = billDao.getRevenueForDate(businessDate)
+        val cashRevenuePaise  = billDao.getCashRevenueForDate(businessDate)
+        val upiRevenuePaise   = billDao.getUpiRevenueForDate(businessDate)
+        val billCount         = billDao.getBillCountForDate(businessDate)
+        val flowPlan          = getFlowPurchasePlan(businessDate)
+        val reorderList       = getStockReorderList()
+
+        return DaySummary(
+            businessDate      = businessDate,
+            totalRevenuePaise = totalRevenuePaise,
+            totalBills        = billCount,
+            cashRevenuePaise  = cashRevenuePaise,
+            upiRevenuePaise   = upiRevenuePaise,
+            flowPurchasePlan  = flowPlan,
+            stockReorderList  = reorderList
+        )
+    }
+
     // ─── Analytics ──────────────────────────────────────────────────────────
 
     suspend fun totalBillCount(): Int = billDao.totalBillCount()

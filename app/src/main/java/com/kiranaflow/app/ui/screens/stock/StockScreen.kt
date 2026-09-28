@@ -23,7 +23,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
 import com.kiranaflow.app.data.model.CatalogItem
+import com.kiranaflow.app.data.model.DaySummary
 import com.kiranaflow.app.data.model.InventoryType
 import com.kiranaflow.app.ui.screens.billing.KfBottomBar
 import com.kiranaflow.app.ui.screens.billing.KfTopBarActions
@@ -31,7 +35,7 @@ import com.kiranaflow.app.ui.theme.*
 
 /**
  * Stock / Dashboard screen.
- * Matches Image 4: SYNCED header, LIVE COUNTER card, TODAY'S GROSS REVENUE,
+ * Matches Image 4: OFFLINE READY header, LIVE COUNTER card, TODAY'S GROSS REVENUE,
  * progress bar, Tender Breakdown, Lock Drawer & Close Day, Share via WhatsApp.
  */
 @Composable
@@ -43,6 +47,18 @@ fun StockScreen(
     val state by viewModel.uiState.collectAsState()
     var showCatalog by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    val shareDaySummary = {
+        val text = viewModel.buildShareSummaryText()
+        val sendIntent = Intent().apply {
+            action = Intent.ACTION_SEND
+            putExtra(Intent.EXTRA_TEXT, text)
+            type = "text/plain"
+        }
+        val shareIntent = Intent.createChooser(sendIntent, "Share Day Summary via WhatsApp")
+        context.startActivity(shareIntent)
+    }
 
     Scaffold(
         containerColor = KfBgSand,
@@ -64,7 +80,7 @@ fun StockScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // ── LIVE COUNTER card
-            item { LiveCounterCard() }
+            item { LiveCounterCard(businessDate = state.businessDate) }
 
             // ── TODAY'S GROSS REVENUE card
             item { RevenueCard(revenue = state.todayRevenue, billCount = state.todayBillCount, dailyGoal = 18000.0) }
@@ -75,21 +91,25 @@ fun StockScreen(
             // ── Lock Drawer & Close Day
             item {
                 Button(
-                    onClick = { },
+                    onClick = { viewModel.openCloseDayDialog() },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = KfNavy, contentColor = Color.White),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Icon(Icons.Filled.Lock, null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Lock Drawer & Close Day", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(
+                        if (state.isDayClosed) "Day Closed (View Summary)" else "Lock Drawer & Close Day",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
                 }
             }
 
             // ── Share via WhatsApp
             item {
                 OutlinedButton(
-                    onClick = { },
+                    onClick = { shareDaySummary() },
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = KfTextDark),
                     border = BorderStroke(1.dp, KfBorderMid),
@@ -150,6 +170,16 @@ fun StockScreen(
     state.editingItem?.let { item ->
         EditStockDialog(item = item, onSave = viewModel::saveEdit, onDismiss = viewModel::cancelEdit)
     }
+
+    if (state.showCloseDayDialog) {
+        CloseDayDialog(
+            daySummary = state.daySummary,
+            isDayClosed = state.isDayClosed,
+            onConfirm = viewModel::confirmCloseDay,
+            onShare = { shareDaySummary() },
+            onDismiss = viewModel::dismissCloseDayDialog
+        )
+    }
 }
 
 // ─── Top Bar ──────────────────────────────────────────────────────────────────
@@ -161,9 +191,9 @@ private fun StockTopBar(onToggleCatalog: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(KfSynced))
+            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(KfSuccess))
             Spacer(Modifier.width(6.dp))
-            Text("SYNCED", color = KfSynced, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
+            Text("OFFLINE READY", color = KfSuccess, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
         }
         Spacer(Modifier.width(10.dp))
         Text("Stock", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = KfTextDark)
@@ -175,7 +205,7 @@ private fun StockTopBar(onToggleCatalog: () -> Unit) {
 // ─── LIVE COUNTER card ────────────────────────────────────────────────────────
 
 @Composable
-private fun LiveCounterCard() {
+private fun LiveCounterCard(businessDate: String) {
     Surface(
         color  = KfCard,
         shape  = RoundedCornerShape(14.dp),
@@ -186,11 +216,11 @@ private fun LiveCounterCard() {
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(KfOnline))
+            Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(KfSuccess))
             Spacer(Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("LIVE COUNTER  •  SHIFT A", color = KfTextDark, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
-                Text("07:00 AM – Now  (Synced 1m ago)", color = KfTextLight, style = MaterialTheme.typography.bodySmall)
+                Text("LIVE COUNTER  •  ACTIVE SHIFT", color = KfTextDark, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                Text("Business Date: ${if (businessDate.isNotBlank()) businessDate else "Today"} • On-Device", color = KfTextLight, style = MaterialTheme.typography.bodySmall)
             }
             Surface(
                 color  = KfNavy,
@@ -202,7 +232,7 @@ private fun LiveCounterCard() {
                 ) {
                     Icon(Icons.Outlined.Person, null, tint = Color.White, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Listen", color = Color.White, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                    Text("Ready", color = Color.White, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
                 }
             }
         }
@@ -441,4 +471,190 @@ private fun KfField(label: String, value: String, onChange: (String) -> Unit) {
         colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = KfTeal, unfocusedBorderColor = KfBorderMid, focusedTextColor = KfTextDark, unfocusedTextColor = KfTextDark),
         modifier = Modifier.fillMaxWidth()
     )
+}
+
+@Composable
+private fun CloseDayDialog(
+    daySummary: DaySummary?,
+    isDayClosed: Boolean,
+    onConfirm: () -> Unit,
+    onShare: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (daySummary == null) return
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = KfCard,
+            border = BorderStroke(1.dp, KfBorderLight),
+            modifier = Modifier.fillMaxWidth().padding(8.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Header
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(KfNavy.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.Lock, null, tint = KfNavy, modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            "Day Summary & Close",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = KfTextDark
+                        )
+                        Text(
+                            "Date: ${daySummary.businessDate}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = KfTextLight
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = KfBorderLight)
+
+                // Key metrics row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(
+                            "TOTAL REVENUE",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = KfTextMid
+                        )
+                        Text(
+                            "₹${String.format(java.util.Locale.US, "%.2f", daySummary.totalRevenue)}",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = KfAmber
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            "BILLS",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = KfTextMid
+                        )
+                        Text(
+                            "${daySummary.totalBills}",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = KfTextDark
+                        )
+                    }
+                }
+
+                // Tender split
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "Cash: ₹${String.format(java.util.Locale.US, "%.2f", daySummary.cashRevenue)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = KfTeal
+                    )
+                    Text(
+                        "UPI: ₹${String.format(java.util.Locale.US, "%.2f", daySummary.upiRevenue)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = KfNavy
+                    )
+                }
+
+                // FLOW tomorrow purchase plan
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "🛒 Tomorrow's FLOW Purchase Plan",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = KfTextDark
+                    )
+                    if (daySummary.flowPurchasePlan.isEmpty()) {
+                        Text("No FLOW items sold today.", style = MaterialTheme.typography.bodySmall, color = KfTextLight)
+                    } else {
+                        daySummary.flowPurchasePlan.take(4).forEach { item ->
+                            Text(
+                                "• ${item.itemName}: ${item.suggestedPurchaseDisplayUnits} ${item.displayUnit}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = KfTextMid
+                            )
+                        }
+                        if (daySummary.flowPurchasePlan.size > 4) {
+                            Text(
+                                "+ ${daySummary.flowPurchasePlan.size - 4} more items",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = KfTeal
+                            )
+                        }
+                    }
+                }
+
+                // Low Stock Reorder Alert
+                if (daySummary.stockReorderList.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            "⚠️ Low Stock Reorder List",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = KfError
+                        )
+                        daySummary.stockReorderList.take(3).forEach { item ->
+                            val curr = item.stockBaseUnits.toDouble() / item.displayUnit.multiplierToBase
+                            val min = item.reorderThresholdBaseUnits.toDouble() / item.displayUnit.multiplierToBase
+                            Text(
+                                "• ${item.name}: $curr ${item.displayUnit.name} (Min: $min)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = KfTextMid
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                // Actions
+                OutlinedButton(
+                    onClick = onShare,
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, KfTeal),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = KfTeal)
+                ) {
+                    Icon(Icons.Filled.Share, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Share via WhatsApp / Text", fontWeight = FontWeight.Bold)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f).height(46.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, KfBorderMid)
+                    ) {
+                        Text("Dismiss", color = KfTextMid)
+                    }
+
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f).height(46.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = KfNavy, contentColor = Color.White)
+                    ) {
+                        Text(if (isDayClosed) "Finalized ✓" else "Lock Drawer", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
 }

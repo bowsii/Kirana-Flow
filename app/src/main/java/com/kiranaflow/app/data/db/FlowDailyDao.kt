@@ -13,6 +13,9 @@ interface FlowDailyDao {
     @Query("SELECT * FROM flow_daily WHERE businessDate = :businessDate")
     fun getFlowDailyForDate(businessDate: String): Flow<List<FlowDaily>>
 
+    @Query("SELECT * FROM flow_daily WHERE businessDate = :businessDate")
+    suspend fun getFlowDailyListForDate(businessDate: String): List<FlowDaily>
+
     @Query("SELECT * FROM flow_daily WHERE itemId = :itemId AND businessDate = :businessDate LIMIT 1")
     suspend fun getFlowDaily(itemId: String, businessDate: String): FlowDaily?
 

@@ -48,6 +48,9 @@ KiranaFlow is an **offline-first, voice-powered Android POS** for kirana shop ow
 | Success / Badges | Green Mint | #4CAF50 |
 | Error / Danger | Crimson Red | #E53E3E |
 
+> **Approved Palette Rule:**
+> The active approved palette is the Warm Sand & Deep Accents mockup palette exclusively (`#EDE8DC`, `#2D6E5E`, `#1C2333`, `#E09B1A`). No violet, indigo, or blue AI palette colors are permitted anywhere in the codebase.
+
 **Tech Stack Used (all free):**
 | Component | Technology |
 |---|---|
@@ -137,6 +140,10 @@ app/
    - `exportSchema = true` enabled with schema JSON committed to `app/schemas/`.
 9. **Automated Testing**:
    - Unit tests covering `Money`, `Quantity`, `UuidV7`, and `BusinessDayManager` pass cleanly in `./gradlew test`.
+10. **UI Truthfulness & Operations (Section C)**:
+   - Removed fake "ONLINE" and "SYNCED" status pills, replaced with truthful indicators (`OFFLINE READY`, `MIC READY`, `LISTENING`).
+   - Wired "Lock Drawer & Close Day" to `closeBusinessDay()`: snapshots `flow_daily` and calculates tomorrow's FLOW purchase plan and low-stock reorder alerts.
+   - Wired "Share Day Summary via WhatsApp" to Android system share sheet (`Intent.ACTION_SEND`, `type = "text/plain"`).
 
 ---
 

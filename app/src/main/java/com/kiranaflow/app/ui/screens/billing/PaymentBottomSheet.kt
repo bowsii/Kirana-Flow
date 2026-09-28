@@ -78,11 +78,11 @@ fun PaymentBottomSheet(
                         lineHeight = 20.sp
                     )
                     Spacer(Modifier.weight(1f))
-                    // SYNCED badge
+                    // OFFLINE READY badge
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(KfSynced))
+                        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(KfSuccess))
                         Spacer(Modifier.width(5.dp))
-                        Text("SYNCED", color = KfSynced, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                        Text("OFFLINE READY", color = KfSuccess, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
                     }
                     Spacer(Modifier.width(10.dp))
                     KfTopBarActions()

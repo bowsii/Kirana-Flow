@@ -31,7 +31,7 @@ import com.kiranaflow.app.ui.theme.*
  */
 @Composable
 fun SpeakScreen(
-    isOnline: Boolean = true,
+    statusText: String = "MIC READY",
     lastBillNumber: String = "",
     lastBillAmount: String = "",
     onMicTap: () -> Unit,
@@ -43,7 +43,7 @@ fun SpeakScreen(
     Scaffold(
         containerColor = KfBgSand,
         topBar = {
-            KfSpeakTopBar(isOnline = isOnline)
+            KfSpeakTopBar(statusText = statusText)
         },
         bottomBar = {
             KfBottomBar(
@@ -127,7 +127,7 @@ fun SpeakScreen(
 // ─── Top Bar ──────────────────────────────────────────────────────────────────
 
 @Composable
-private fun KfSpeakTopBar(isOnline: Boolean) {
+private fun KfSpeakTopBar(statusText: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -135,7 +135,7 @@ private fun KfSpeakTopBar(isOnline: Boolean) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // ONLINE pill
+        // Status pill
         Surface(
             color  = KfCard,
             shape  = RoundedCornerShape(20.dp),
@@ -149,12 +149,12 @@ private fun KfSpeakTopBar(isOnline: Boolean) {
                     modifier = Modifier
                         .size(8.dp)
                         .clip(CircleShape)
-                        .background(if (isOnline) KfOnline else KfError)
+                        .background(KfSuccess)
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    if (isOnline) "ONLINE" else "OFFLINE",
-                    color = if (isOnline) KfOnline else KfError,
+                    statusText,
+                    color = KfSuccess,
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
                 )
             }

@@ -48,9 +48,9 @@ fun PastBillsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(KfSynced))
+                        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(KfSuccess))
                         Spacer(Modifier.width(6.dp))
-                        Text("SYNCED", color = KfSynced, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                        Text("OFFLINE READY", color = KfSuccess, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
                     }
                     Spacer(Modifier.width(10.dp))
                     Text("History", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = KfTextDark)
