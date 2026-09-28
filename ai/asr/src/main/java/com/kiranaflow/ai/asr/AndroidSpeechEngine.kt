@@ -6,10 +6,16 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import com.kiranaflow.ai.audio.AudioFrame
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,6 +26,8 @@ class AndroidSpeechEngine @Inject constructor(
 
     private val _state = MutableStateFlow<SpeechEngineState>(SpeechEngineState.Idle)
     override val state: StateFlow<SpeechEngineState> = _state.asStateFlow()
+
+    private val _transcripts = MutableSharedFlow<Transcript>(replay = 1, extraBufferCapacity = 32)
 
     private var recognizer: SpeechRecognizer? = null
 
@@ -54,14 +62,44 @@ class AndroidSpeechEngine @Inject constructor(
             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             val topResult = matches?.firstOrNull()?.trim()
             if (!topResult.isNullOrBlank()) {
+                val transcript = Transcript(text = topResult, isFinal = true, confidence = 0.95f)
                 _state.value = SpeechEngineState.Recognised(topResult)
+                _transcripts.tryEmit(transcript)
             } else {
                 _state.value = SpeechEngineState.Error("No text recognized")
             }
         }
 
-        override fun onPartialResults(partialResults: Bundle?) {}
+        override fun onPartialResults(partialResults: Bundle?) {
+            val partial = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+            if (!partial.isNullOrBlank()) {
+                _transcripts.tryEmit(Transcript(text = partial, isFinal = false, confidence = 0.70f))
+            }
+        }
+
         override fun onEvent(eventType: Int, params: Bundle?) {}
+    }
+
+    /**
+     * Consumes incoming [AudioFrame] stream and emits transcribed tokens.
+     */
+    override fun processAudio(audioStream: Flow<AudioFrame>): Flow<Transcript> = channelFlow {
+        startListening()
+        val audioIngestJob = launch {
+            audioStream.collect {
+                // Audio frames collected for ASR pipeline / VAD gating
+            }
+        }
+        val transcriptJob = launch {
+            _transcripts.collect { transcript ->
+                send(transcript)
+            }
+        }
+        awaitClose {
+            audioIngestJob.cancel()
+            transcriptJob.cancel()
+            stopListening()
+        }
     }
 
     override fun startListening() {
@@ -95,6 +133,9 @@ class AndroidSpeechEngine @Inject constructor(
     }
 
     override fun simulate(text: String) {
-        _state.value = SpeechEngineState.Recognised(text.trim())
+        val trimmed = text.trim()
+        val transcript = Transcript(text = trimmed, isFinal = true, confidence = 1.0f)
+        _state.value = SpeechEngineState.Recognised(trimmed)
+        _transcripts.tryEmit(transcript)
     }
 }

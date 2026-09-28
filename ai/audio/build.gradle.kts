@@ -4,13 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.kiranaflow.ai.asr"
+    namespace = "com.kiranaflow.ai.audio"
 }
 
 dependencies {
     implementation(project(":core:common"))
-    implementation(project(":ai:runtime"))
-    api(project(":ai:audio"))
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
