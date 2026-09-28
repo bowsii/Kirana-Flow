@@ -71,6 +71,9 @@ dependencies {
     implementation(project(":core:database"))
     implementation(project(":core:data"))
     implementation(project(":core:domain"))
+    implementation(project(":ai:runtime"))
+    implementation(project(":ai:asr"))
+    implementation(project(":ai:nlu"))
 
     // AndroidX & UI
     implementation(libs.androidx.core.ktx)

@@ -78,11 +78,10 @@ class BillingQueue @Inject constructor(
                 request.responseChannel?.complete(result)
             }
         }
+    }
 
-        // On application start: Replay any uncommitted PENDING journal entries
-        scope.launch {
-            replayPendingJournals()
-        }
+    fun shutdown() {
+        scope.cancel()
     }
 
     /**

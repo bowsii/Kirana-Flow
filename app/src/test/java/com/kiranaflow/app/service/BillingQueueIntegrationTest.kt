@@ -85,6 +85,7 @@ class BillingQueueIntegrationTest {
 
     @After
     fun tearDown() {
+        billingQueue.shutdown()
         db.close()
     }
 

@@ -1,4 +1,4 @@
-package com.kiranaflow.app.service
+package com.kiranaflow.ai.nlu
 
 import com.kiranaflow.core.model.CommandIntent
 import com.kiranaflow.core.model.VoiceCommand
@@ -6,23 +6,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Rule-based NLU engine for Tamil / Tanglish billing commands.
- *
- * In production this will be replaced by Gemma-3n-E2B INT4 via ONNX Runtime.
- * For the hackathon prototype, a deterministic rule engine gives identical
- * output without requiring model inference infrastructure.
- *
- * Handles:
- *   Tamil number words: oru(1) rendu(2) moonu(3) naalu(4) aanju(5) aaru(6)
- *                       ezhu(7) ettu(8) onbathu(9) pathu(10)
- *   English number words: one two three … ten
- *   Bare numerals: 2 Parle-G, 3 parle g
- *   Intent keywords: bill potru / commit, remove last / thiri, open camera
+ * Deterministic rule-based NLU engine implementing [IntentParser].
+ * Handles Tamil / Tanglish number words, bare numerals, units, and billing keywords.
  */
 @Singleton
-class NluEngine @Inject constructor() {
+class RuleBasedIntentParser @Inject constructor() : IntentParser {
 
-    // ─── Tamil number words (Tanglish transliterations) ─────────────────────
     private val tamilNumbers = mapOf(
         "oru" to 1.0, "onnu" to 1.0, "ond" to 1.0,
         "rendu" to 2.0, "randu" to 2.0, "iru" to 2.0,
@@ -31,13 +20,12 @@ class NluEngine @Inject constructor() {
         "aanju" to 5.0, "anju" to 5.0,
         "aaru" to 6.0, "aru" to 6.0,
         "ezhu" to 7.0, "yezhu" to 7.0,
-        "ettu" to 8.0, "ettu" to 8.0,
+        "ettu" to 8.0,
         "onbathu" to 9.0, "ombathu" to 9.0,
         "pathu" to 10.0, "patthu" to 10.0,
         "irubathu" to 20.0, "muppathu" to 30.0, "narppathu" to 40.0
     )
 
-    // ─── English number words ─────────────────────────────────────────────────
     private val englishNumbers = mapOf(
         "one" to 1.0, "two" to 2.0, "three" to 3.0, "four" to 4.0,
         "five" to 5.0, "six" to 6.0, "seven" to 7.0, "eight" to 8.0,
@@ -45,7 +33,6 @@ class NluEngine @Inject constructor() {
         "quarter" to 0.25, "dozen" to 12.0
     )
 
-    // ─── Unit tokens ─────────────────────────────────────────────────────────
     private val unitTokens = mapOf(
         "kg" to "kg", "kilo" to "kg", "kilogram" to "kg",
         "liter" to "L", "litre" to "L", "l" to "L", "ml" to "ml",
@@ -55,7 +42,6 @@ class NluEngine @Inject constructor() {
         "dozen" to "dozen"
     )
 
-    // ─── Intent keywords ─────────────────────────────────────────────────────
     private val commitKeywords = setOf(
         "bill potru", "bill pottru", "bill", "commit", "done", "finish",
         "save bill", "generate bill", "close", "finalize", "finalise",
@@ -70,29 +56,21 @@ class NluEngine @Inject constructor() {
     )
     private val micOnKeywords = setOf("mic on", "start", "listen", "micon")
 
-    // ─── Public API ──────────────────────────────────────────────────────────
+    override suspend fun parse(utterance: String): VoiceCommand {
+        val text = utterance.trim().lowercase()
 
-    /**
-     * Parse a raw transcript string into a [VoiceCommand].
-     *
-     * @param rawText  The ASR transcript (lowercase preferred but not required)
-     * @return         A parsed [VoiceCommand] ready for the Command Router
-     */
-    fun parse(rawText: String): VoiceCommand {
-        val text = rawText.trim().lowercase()
-
-        // 1. Intent shortcuts (exact / prefix match)
+        // 1. Intent shortcuts
         if (commitKeywords.any { text.contains(it) })
-            return VoiceCommand(intent = CommandIntent.COMMIT, rawText = rawText)
+            return VoiceCommand(intent = CommandIntent.COMMIT, rawText = utterance)
 
         if (removeKeywords.any { text.contains(it) })
-            return VoiceCommand(intent = CommandIntent.REMOVE_LAST, rawText = rawText)
+            return VoiceCommand(intent = CommandIntent.REMOVE_LAST, rawText = utterance)
 
         if (cameraKeywords.any { text.contains(it) })
-            return VoiceCommand(intent = CommandIntent.OPEN_CAMERA, rawText = rawText)
+            return VoiceCommand(intent = CommandIntent.OPEN_CAMERA, rawText = utterance)
 
         if (micOnKeywords.any { text.contains(it) })
-            return VoiceCommand(intent = CommandIntent.MIC_ON, rawText = rawText)
+            return VoiceCommand(intent = CommandIntent.MIC_ON, rawText = utterance)
 
         // 2. ADD intent: extract quantity + unit + item name
         val tokens = text.split(Regex("\\s+"))
@@ -104,23 +82,18 @@ class NluEngine @Inject constructor() {
         while (i < tokens.size) {
             val tok = tokens[i]
             when {
-                // Tamil number word
                 tamilNumbers.containsKey(tok) -> {
                     quantity = tamilNumbers[tok]!!
                 }
-                // English number word
                 englishNumbers.containsKey(tok) -> {
                     quantity = englishNumbers[tok]!!
                 }
-                // Bare numeral (e.g. "2", "1.5")
                 tok.toDoubleOrNull() != null -> {
                     quantity = tok.toDouble()
                 }
-                // Unit token
-                unitTokens.containsKey(tok) -> {
+                unit == null && unitTokens.containsKey(tok) -> {
                     unit = unitTokens[tok]
                 }
-                // Otherwise it's part of the item name
                 else -> itemTokens.add(tok)
             }
             i++
@@ -129,11 +102,11 @@ class NluEngine @Inject constructor() {
         val itemName = itemTokens.joinToString(" ").trim()
 
         return if (itemName.isEmpty()) {
-            VoiceCommand(intent = CommandIntent.UNKNOWN, rawText = rawText)
+            VoiceCommand(intent = CommandIntent.UNKNOWN, rawText = utterance)
         } else {
             VoiceCommand(
                 intent   = CommandIntent.ADD,
-                rawText  = rawText,
+                rawText  = utterance,
                 item     = itemName,
                 quantity = quantity,
                 unit     = unit
