@@ -1,4 +1,4 @@
-package com.kiranaflow.core.data
+package com.kiranaflow.core.domain.validation
 
 import com.kiranaflow.core.model.CatalogItem
 import javax.inject.Inject
@@ -15,9 +15,8 @@ import kotlin.math.min
  *   3. Name starts with query
  *   4. Name contains query
  *   5. Alias contains query
- *   6. Levenshtein distance ≤ 3 for short tokens
- *
- * This is a local, free alternative to embedding-based semantic search.
+ *   6. Token overlap (word-level similarity)
+ *   7. Levenshtein distance <= 3 fallback
  */
 @Singleton
 class CatalogValidator @Inject constructor() {
@@ -52,14 +51,18 @@ class CatalogValidator @Inject constructor() {
             parseAliases(it.aliases).any { a -> a.lowercase().contains(q) }
         }?.let { return it }
 
-        // 6. Token overlap (any word in query matches any word in name/alias)
-        val qWords = q.split(Regex("\\s+")).filter { it.length > 2 }
+        // 6. Token overlap (word-level match for tokens of length > 2)
+        val qWords = q.split(Regex("[^a-zA-Z0-9]+")).filter { it.length > 2 }
         if (qWords.isNotEmpty()) {
             val tokenMatch = catalog.mapNotNull { item ->
-                val nameWords = item.name.lowercase().split(Regex("\\s+"))
-                val aliasWords = parseAliases(item.aliases).flatMap { it.lowercase().split(Regex("\\s+")) }
-                val allWords = nameWords + aliasWords
-                val matchCount = qWords.count { w -> allWords.any { it.contains(w) || w.contains(it) } }
+                val nameWords = item.name.lowercase().split(Regex("[^a-zA-Z0-9]+")).filter { it.length > 2 }
+                val aliasWords = parseAliases(item.aliases).flatMap {
+                    it.lowercase().split(Regex("[^a-zA-Z0-9]+")).filter { a -> a.length > 2 }
+                }
+                val allWords = (nameWords + aliasWords).toSet()
+                val matchCount = qWords.count { w ->
+                    allWords.any { word -> word == w || (word.length >= 4 && (word.startsWith(w) || w.startsWith(word))) }
+                }
                 if (matchCount > 0) Pair(item, matchCount) else null
             }.maxByOrNull { it.second }
             if (tokenMatch != null) return tokenMatch.first
@@ -80,14 +83,14 @@ class CatalogValidator @Inject constructor() {
         return null
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────────
-
     private fun parseAliases(json: String): List<String> {
         return try {
             json.trim('[', ']').split(",")
                 .map { it.trim().trim('"') }
                 .filter { it.isNotBlank() }
-        } catch (e: Exception) { emptyList() }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     private fun levenshtein(a: String, b: String): Int {

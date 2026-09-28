@@ -3,7 +3,6 @@ package com.kiranaflow.core.data
 import com.kiranaflow.core.database.*
 import com.kiranaflow.core.model.*
 import com.kiranaflow.core.data.BillingQueue
-import com.kiranaflow.core.data.CatalogValidator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -15,7 +14,6 @@ class KiranaRepository @Inject constructor(
     private val catalogDao: CatalogDao,
     private val billDao: BillDao,
     private val billingQueue: BillingQueue,
-    private val catalogValidator: CatalogValidator,
     private val draftCartDao: DraftCartDao,
     private val stockMovementDao: StockMovementDao,
     private val flowDailyDao: FlowDailyDao,
@@ -29,9 +27,6 @@ class KiranaRepository @Inject constructor(
     fun getLowStockItems(): Flow<List<CatalogItem>> = catalogDao.getLowStockItems()
 
     suspend fun searchCatalog(query: String): List<CatalogItem> = catalogDao.search(query)
-
-    fun findBestMatch(query: String, catalog: List<CatalogItem>): CatalogItem? =
-        catalogValidator.findBestMatch(query, catalog)
 
     suspend fun addCatalogItem(item: CatalogItem) = catalogDao.insert(item)
 

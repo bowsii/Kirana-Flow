@@ -7,7 +7,6 @@ import com.kiranaflow.core.database.*
 import com.kiranaflow.core.model.*
 import com.kiranaflow.core.data.KiranaRepository
 import com.kiranaflow.core.data.BillingQueue
-import com.kiranaflow.core.data.CatalogValidator
 import com.kiranaflow.core.common.UuidV7
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -79,7 +78,7 @@ class BillingQueueIntegrationTest {
 
         repository = KiranaRepository(
             catalogDao, billDao, billingQueue,
-            CatalogValidator(), draftCartDao, stockMovementDao, flowDailyDao, bdm
+            draftCartDao, stockMovementDao, flowDailyDao, bdm
         )
     }
 

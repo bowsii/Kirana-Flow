@@ -1,7 +1,7 @@
 package com.kiranaflow.core.domain.usecase
 
-import com.kiranaflow.core.data.CatalogValidator
 import com.kiranaflow.core.data.KiranaRepository
+import com.kiranaflow.core.domain.validation.CatalogValidator
 import com.kiranaflow.core.model.*
 import javax.inject.Inject
 
