@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">KiranaFlow</string>
+    <string name="tap_to_speak">Tap &amp; Speak</string>
+    <string name="listening">Listening…</string>
+    <string name="bill_saved">Bill Saved!</string>
+    <string name="add_item">Add Item</string>
+    <string name="total">Total</string>
+    <string name="done">Done</string>
+    <string name="payment_mode">Payment Mode</string>
+    <string name="cash">Cash</string>
+    <string name="upi_qr">UPI / QR</string>
+    <string name="confirm_pay">Confirm Payment</string>
+    <string name="stock_low">Low Stock</string>
+    <string name="no_bills">No bills yet</string>
+</resources>
