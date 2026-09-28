@@ -36,6 +36,65 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: KiranaFlowDatabase? = null
 
+        val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `bill_journal` (
+                        `journalId` TEXT NOT NULL,
+                        `billId` TEXT NOT NULL,
+                        `payloadJson` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `appliedAt` INTEGER,
+                        PRIMARY KEY(`journalId`)
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_bill_journal_billId` ON `bill_journal` (`billId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_bill_journal_status` ON `bill_journal` (`status`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_bill_journal_createdAt` ON `bill_journal` (`createdAt`)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `stock_movements` (
+                        `id` TEXT NOT NULL,
+                        `itemId` TEXT NOT NULL,
+                        `deltaBaseUnits` INTEGER NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `refId` TEXT NOT NULL,
+                        `businessDate` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_stock_movements_itemId` ON `stock_movements` (`itemId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_stock_movements_businessDate` ON `stock_movements` (`businessDate`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_stock_movements_createdAt` ON `stock_movements` (`createdAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_stock_movements_refId` ON `stock_movements` (`refId`)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `flow_daily` (
+                        `id` TEXT NOT NULL,
+                        `itemId` TEXT NOT NULL,
+                        `businessDate` TEXT NOT NULL,
+                        `soldBaseUnits` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_flow_daily_itemId` ON `flow_daily` (`itemId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_flow_daily_businessDate` ON `flow_daily` (`businessDate`)")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_flow_daily_itemId_businessDate` ON `flow_daily` (`itemId`, `businessDate`)")
+
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `draft_cart` (
+                        `id` TEXT NOT NULL,
+                        `cartJson` TEXT NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                """)
+            }
+        }
+
         fun getInstance(context: Context): KiranaFlowDatabase {
             return INSTANCE ?: synchronized(this) {
                 Room.databaseBuilder(
@@ -43,6 +102,7 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
                     KiranaFlowDatabase::class.java,
                     "kiranaflow.db"
                 )
+                    .addMigrations(MIGRATION_1_2)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)
