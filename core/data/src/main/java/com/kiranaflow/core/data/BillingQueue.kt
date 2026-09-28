@@ -58,9 +58,8 @@ class BillingQueue @Inject constructor(
     )
 
     data class BillCommitRequest(
-        val cartLines: List<CartLine>,
-        val paymentMode: PaymentMode,
-        val tenderedPaise: Long,
+        val journalId: String,
+        val payload: JournalPayload,
         val responseChannel: CompletableDeferred<CommitResult>? = null
     )
 
@@ -86,7 +85,8 @@ class BillingQueue @Inject constructor(
 
     /**
      * Enqueue a bill commit request into the serial queue.
-     * UI gets a Flow of commit results or awaits the response.
+     * The PENDING journal row is written on the caller side before enqueueing to the Channel.
+     * The draft cart is cleared only after the journal write succeeds.
      */
     suspend fun enqueueCommit(
         cartLines: List<CartLine>,
@@ -94,8 +94,42 @@ class BillingQueue @Inject constructor(
         tenderedPaise: Long = 0L
     ): CommitResult {
         if (cartLines.isEmpty()) return CommitResult.Failure("Cart is empty")
+
+        val totalPaise = cartLines.sumOf { it.lineTotalPaise }
+        val billId = UuidV7.generate()
+        val billNumber = generateBillNumber()
+        val now = System.currentTimeMillis()
+        val businessDate = businessDayManager.getBusinessDate(now)
+
+        val payload = JournalPayload(
+            billId = billId,
+            billNumber = billNumber,
+            cartLines = cartLines,
+            paymentMode = paymentMode,
+            tenderedPaise = tenderedPaise,
+            totalPaise = totalPaise,
+            businessDate = businessDate,
+            timestamp = now
+        )
+        val payloadJson = Json.encodeToString(payload)
+        val journalId = UuidV7.generate()
+        val journalEntry = BillJournal(
+            journalId = journalId,
+            billId = billId,
+            payloadJson = payloadJson,
+            status = JournalStatus.PENDING,
+            createdAt = now
+        )
+
+        // 1. Write PENDING journal on caller side before queueing
+        journalDao.insertJournal(journalEntry)
+
+        // 2. Clear draft cart only after journal write succeeds
+        draftCartDao.clearDraft()
+
+        // 3. Send to actor consumer
         val deferred = CompletableDeferred<CommitResult>()
-        queue.send(BillCommitRequest(cartLines, paymentMode, tenderedPaise, deferred))
+        queue.send(BillCommitRequest(journalId, payload, deferred))
         return deferred.await()
     }
 
@@ -113,40 +147,7 @@ class BillingQueue @Inject constructor(
 
     private suspend fun processCommit(req: BillCommitRequest): CommitResult {
         return try {
-            val totalPaise = req.cartLines.sumOf { it.lineTotalPaise }
-            val billId = UuidV7.generate()
-            val billNumber = generateBillNumber()
-            val now = System.currentTimeMillis()
-            val businessDate = businessDayManager.getBusinessDate(now)
-
-            val payload = JournalPayload(
-                billId = billId,
-                billNumber = billNumber,
-                cartLines = req.cartLines,
-                paymentMode = req.paymentMode,
-                tenderedPaise = req.tenderedPaise,
-                totalPaise = totalPaise,
-                businessDate = businessDate,
-                timestamp = now
-            )
-            val payloadJson = Json.encodeToString(payload)
-
-            // Step 1: Write PENDING journal entry (fsync'd, own transaction)
-            val journalEntry = BillJournal(
-                journalId = UuidV7.generate(),
-                billId = billId,
-                payloadJson = payloadJson,
-                status = JournalStatus.PENDING,
-                createdAt = now
-            )
-            journalDao.insertJournal(journalEntry)
-
-            // Step 2: Atomic @Transaction commit of Bill + BillItems + StockMovements + FlowDaily + mark APPLIED
-            val committedBill = applyJournalTransaction(journalEntry.journalId, payload)
-
-            // Step 3: Clear active draft cart
-            draftCartDao.clearDraft()
-
+            val committedBill = applyJournalTransaction(req.journalId, req.payload)
             CommitResult.Success(committedBill)
         } catch (e: Exception) {
             CommitResult.Failure(e.message ?: "Failed to commit bill")

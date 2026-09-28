@@ -90,6 +90,62 @@ class BillingQueueIntegrationTest {
     }
 
     @Test
+    fun testCrashAfterBillPotruBeforeConsumerRuns_billIsRecoveredOnRestart() = runBlocking {
+        // Step 1: Active draft cart exists
+        val cartLines = listOf(
+            CartLine(stockItem.id, stockItem.name, 5L, stockItem.unit, stockItem.pricePaise, InventoryType.STOCK),
+            CartLine(flowItem.id, flowItem.name, 500L, flowItem.unit, flowItem.pricePaise, InventoryType.FLOW)
+        )
+        val draftCart = Cart(lines = cartLines)
+        repository.saveDraftCart(draftCart)
+        assertNotNull(repository.loadDraftCart())
+
+        // Step 2: "Bill potru" triggered -> Caller writes PENDING journal & clears draft cart
+        val billId = UuidV7.generate()
+        val payload = BillingQueue.JournalPayload(
+            billId = billId,
+            billNumber = "#1049",
+            cartLines = cartLines,
+            paymentMode = PaymentMode.CASH,
+            tenderedPaise = 5000L,
+            totalPaise = 3900L,
+            businessDate = bdm.getBusinessDate(),
+            timestamp = System.currentTimeMillis()
+        )
+        val payloadJson = kotlinx.serialization.json.Json.encodeToString(
+            BillingQueue.JournalPayload.serializer(), payload
+        )
+        val journalId = UuidV7.generate()
+        journalDao.insertJournal(
+            BillJournal(
+                journalId = journalId,
+                billId = billId,
+                payloadJson = payloadJson,
+                status = JournalStatus.PENDING,
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        draftCartDao.clearDraft()
+
+        // Simulate crash right here before consumer executes apply transaction
+        assertNull(repository.loadDraftCart()) // Draft cart cleared
+        assertNull(billDao.getBillById(billId)) // Bill not yet committed
+        assertEquals(50L, catalogDao.getById(stockItem.id)?.stockBaseUnits) // Stock not yet deducted
+        assertEquals(JournalStatus.PENDING, journalDao.getJournalByBillId(billId)?.status)
+
+        // Step 3: Process restart -> replayPendingJournals()
+        billingQueue.replayPendingJournals()
+
+        // Verify recovered
+        val bill = billDao.getBillById(billId)
+        assertNotNull(bill)
+        assertEquals(BillStatus.COMMITTED, bill?.status)
+        assertEquals(3900L, bill?.totalPaise)
+        assertEquals(45L, catalogDao.getById(stockItem.id)?.stockBaseUnits) // 50 - 5 = 45
+        assertEquals(JournalStatus.APPLIED, journalDao.getJournalByBillId(billId)?.status)
+    }
+
+    @Test
     fun testProcessDeathBeforeApply_replayProducesSingleBillAndCorrectInventory() = runBlocking {
         // Step 1: Simulate "process died after journal written, before atomic apply"
         val billId = UuidV7.generate()
