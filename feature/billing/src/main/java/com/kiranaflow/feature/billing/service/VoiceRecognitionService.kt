@@ -38,8 +38,10 @@ class VoiceRecognitionService @Inject constructor(
                     is SpeechEngineState.Idle -> _state.value = VoiceState.Idle
                     is SpeechEngineState.Listening -> _state.value = VoiceState.Listening
                     is SpeechEngineState.Recognised -> {
-                        val cmd = intentParser.parse(engineState.text)
-                        _state.value = VoiceState.Recognised(text = engineState.text, command = cmd)
+                        val parsedCommands = intentParser.parse(engineState.text)
+                        val topCmd = parsedCommands.maxByOrNull { it.confidence }?.command
+                            ?: VoiceCommand(com.kiranaflow.core.model.CommandIntent.UNKNOWN, rawText = engineState.text)
+                        _state.value = VoiceState.Recognised(text = engineState.text, command = topCmd)
                     }
                     is SpeechEngineState.Error -> _state.value = VoiceState.Error(engineState.message)
                 }
@@ -57,8 +59,10 @@ class VoiceRecognitionService @Inject constructor(
 
     fun parseText(text: String) {
         scope.launch {
-            val cmd = intentParser.parse(text)
-            _state.value = VoiceState.Recognised(text = text, command = cmd)
+            val parsedCommands = intentParser.parse(text)
+            val topCmd = parsedCommands.maxByOrNull { it.confidence }?.command
+                ?: VoiceCommand(com.kiranaflow.core.model.CommandIntent.UNKNOWN, rawText = text)
+            _state.value = VoiceState.Recognised(text = text, command = topCmd)
         }
     }
 }

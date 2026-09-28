@@ -8,6 +8,7 @@ import javax.inject.Singleton
 /**
  * Deterministic rule-based NLU engine implementing [IntentParser].
  * Handles Tamil / Tanglish number words, bare numerals, units, and billing keywords.
+ * Returns ranked [ParsedCommand] hypotheses with confidence scores.
  */
 @Singleton
 class RuleBasedIntentParser @Inject constructor() : IntentParser {
@@ -56,25 +57,59 @@ class RuleBasedIntentParser @Inject constructor() : IntentParser {
     )
     private val micOnKeywords = setOf("mic on", "start", "listen", "micon")
 
-    override suspend fun parse(utterance: String): VoiceCommand {
+    override suspend fun parse(utterance: String): List<ParsedCommand> {
         val text = utterance.trim().lowercase()
 
+        if (text.isBlank()) {
+            return listOf(
+                ParsedCommand(
+                    command = VoiceCommand(intent = CommandIntent.UNKNOWN, rawText = utterance),
+                    confidence = 0.0f
+                )
+            )
+        }
+
         // 1. Intent shortcuts
-        if (commitKeywords.any { text.contains(it) })
-            return VoiceCommand(intent = CommandIntent.COMMIT, rawText = utterance)
+        if (commitKeywords.any { text.contains(it) }) {
+            return listOf(
+                ParsedCommand(
+                    command = VoiceCommand(intent = CommandIntent.COMMIT, rawText = utterance),
+                    confidence = 0.98f
+                )
+            )
+        }
 
-        if (removeKeywords.any { text.contains(it) })
-            return VoiceCommand(intent = CommandIntent.REMOVE_LAST, rawText = utterance)
+        if (removeKeywords.any { text.contains(it) }) {
+            return listOf(
+                ParsedCommand(
+                    command = VoiceCommand(intent = CommandIntent.REMOVE_LAST, rawText = utterance),
+                    confidence = 0.98f
+                )
+            )
+        }
 
-        if (cameraKeywords.any { text.contains(it) })
-            return VoiceCommand(intent = CommandIntent.OPEN_CAMERA, rawText = utterance)
+        if (cameraKeywords.any { text.contains(it) }) {
+            return listOf(
+                ParsedCommand(
+                    command = VoiceCommand(intent = CommandIntent.OPEN_CAMERA, rawText = utterance),
+                    confidence = 0.98f
+                )
+            )
+        }
 
-        if (micOnKeywords.any { text.contains(it) })
-            return VoiceCommand(intent = CommandIntent.MIC_ON, rawText = utterance)
+        if (micOnKeywords.any { text.contains(it) }) {
+            return listOf(
+                ParsedCommand(
+                    command = VoiceCommand(intent = CommandIntent.MIC_ON, rawText = utterance),
+                    confidence = 0.98f
+                )
+            )
+        }
 
         // 2. ADD intent: extract quantity + unit + item name
         val tokens = text.split(Regex("\\s+"))
         var quantity = 1.0
+        var hasExplicitQuantity = false
         var unit: String? = null
         val itemTokens = mutableListOf<String>()
 
@@ -84,12 +119,15 @@ class RuleBasedIntentParser @Inject constructor() : IntentParser {
             when {
                 tamilNumbers.containsKey(tok) -> {
                     quantity = tamilNumbers[tok]!!
+                    hasExplicitQuantity = true
                 }
                 englishNumbers.containsKey(tok) -> {
                     quantity = englishNumbers[tok]!!
+                    hasExplicitQuantity = true
                 }
                 tok.toDoubleOrNull() != null -> {
                     quantity = tok.toDouble()
+                    hasExplicitQuantity = true
                 }
                 unit == null && unitTokens.containsKey(tok) -> {
                     unit = unitTokens[tok]
@@ -101,16 +139,33 @@ class RuleBasedIntentParser @Inject constructor() : IntentParser {
 
         val itemName = itemTokens.joinToString(" ").trim()
 
-        return if (itemName.isEmpty()) {
-            VoiceCommand(intent = CommandIntent.UNKNOWN, rawText = utterance)
-        } else {
-            VoiceCommand(
+        if (itemName.isEmpty()) {
+            return listOf(
+                ParsedCommand(
+                    command = VoiceCommand(intent = CommandIntent.UNKNOWN, rawText = utterance),
+                    confidence = 0.1f
+                )
+            )
+        }
+
+        val confidence = when {
+            hasExplicitQuantity && unit != null -> 0.95f
+            hasExplicitQuantity -> 0.90f
+            unit != null -> 0.88f
+            else -> 0.85f
+        }
+
+        val primaryCommand = ParsedCommand(
+            command = VoiceCommand(
                 intent   = CommandIntent.ADD,
                 rawText  = utterance,
                 item     = itemName,
                 quantity = quantity,
                 unit     = unit
-            )
-        }
+            ),
+            confidence = confidence
+        )
+
+        return listOf(primaryCommand)
     }
 }
