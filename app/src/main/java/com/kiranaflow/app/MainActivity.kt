@@ -7,7 +7,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.kiranaflow.app.ui.theme.KfBackgroundDeep
+import com.kiranaflow.app.ui.theme.KfBgSand
 import com.kiranaflow.app.ui.theme.KiranaFlowTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
             KiranaFlowTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color    = KfBackgroundDeep
+                    color    = KfBgSand
                 ) {
                     KiranaFlowNavGraph()
                 }

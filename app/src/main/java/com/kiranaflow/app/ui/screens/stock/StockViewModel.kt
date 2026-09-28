@@ -7,13 +7,19 @@ import com.kiranaflow.app.data.repository.KiranaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import javax.inject.Inject
 
 data class StockUiState(
-    val catalog: List<CatalogItem>        = emptyList(),
-    val lowStockItems: List<CatalogItem>  = emptyList(),
-    val searchResults: List<CatalogItem>  = emptyList(),
-    val editingItem: CatalogItem?         = null
+    val catalog: List<CatalogItem>       = emptyList(),
+    val lowStockItems: List<CatalogItem> = emptyList(),
+    val searchResults: List<CatalogItem> = emptyList(),
+    val editingItem: CatalogItem?        = null,
+    // Dashboard metrics
+    val todayRevenue: Double  = 0.0,
+    val todayBillCount: Int   = 0,
+    val cashAmount: Double    = 0.0,
+    val upiAmount: Double     = 0.0
 )
 
 @HiltViewModel
@@ -35,6 +41,33 @@ class StockViewModel @Inject constructor(
                 _uiState.update { it.copy(lowStockItems = items) }
             }
         }
+        viewModelScope.launch {
+            repository.getRecentBills().collect { bills ->
+                val todayStart = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+                }.timeInMillis
+
+                val todayBills = bills.filter { it.createdAt >= todayStart }
+                val revenue    = todayBills.sumOf { it.totalAmount }
+
+                // Split by payment mode
+                val cash = todayBills
+                    .filter { it.paymentMode == com.kiranaflow.app.data.model.PaymentMode.CASH }
+                    .sumOf { it.totalAmount }
+                val upi = todayBills
+                    .filter { it.paymentMode != com.kiranaflow.app.data.model.PaymentMode.CASH }
+                    .sumOf { it.totalAmount }
+
+                _uiState.update {
+                    it.copy(
+                        todayRevenue   = revenue,
+                        todayBillCount = todayBills.size,
+                        cashAmount     = cash,
+                        upiAmount      = upi
+                    )
+                }
+            }
+        }
     }
 
     fun search(query: String) {
@@ -45,13 +78,8 @@ class StockViewModel @Inject constructor(
         }
     }
 
-    fun startEdit(item: CatalogItem) {
-        _uiState.update { it.copy(editingItem = item) }
-    }
-
-    fun cancelEdit() {
-        _uiState.update { it.copy(editingItem = null) }
-    }
+    fun startEdit(item: CatalogItem) = _uiState.update { it.copy(editingItem = item) }
+    fun cancelEdit()                  = _uiState.update { it.copy(editingItem = null) }
 
     fun saveEdit(item: CatalogItem) {
         viewModelScope.launch {

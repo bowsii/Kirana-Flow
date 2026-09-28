@@ -16,11 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -31,20 +27,27 @@ import com.kiranaflow.app.data.model.CartLine
 import com.kiranaflow.app.data.model.InventoryType
 import com.kiranaflow.app.ui.theme.*
 
+/**
+ * Billing screen — active bill list.
+ * Matches Image 3: "Bill #1049 | LIVE", white item cards,
+ * dark qty badges, ✓OK chip, listening banner, dark DONE button.
+ */
 @Composable
 fun BillingScreen(
     viewModel: BillingViewModel = hiltViewModel(),
     onNavigateToStock: () -> Unit,
-    onNavigateToPastBills: () -> Unit
+    onNavigateToPastBills: () -> Unit,
+    onNavigateToSpeak: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
 
-    // Payment bottom sheet
     if (state.showPaymentSheet) {
         PaymentBottomSheet(
             totalAmount    = state.cart.totalAmount,
             paymentMode    = state.paymentMode,
             tenderedAmount = state.tenderedAmount,
+            billNumber     = "#${(System.currentTimeMillis() % 10000).toInt()}",
+            itemCount      = state.cart.itemCount,
             isProcessing   = state.isCommitting,
             onModeChange   = viewModel::setPaymentMode,
             onTenderChange = viewModel::setTenderedAmount,
@@ -54,12 +57,19 @@ fun BillingScreen(
     }
 
     Scaffold(
-        containerColor = KfBackgroundDeep,
+        containerColor = KfBgSand,
+        topBar = {
+            BillingTopBar(
+                billNumber  = "#1049",
+                itemCount   = state.cart.itemCount,
+                isListening = state.isListening
+            )
+        },
         bottomBar = {
             KfBottomBar(
-                onBill       = { /* already here */ },
-                onStock      = onNavigateToStock,
-                onPastBills  = onNavigateToPastBills,
+                onBill      = onNavigateToSpeak,
+                onStock     = onNavigateToStock,
+                onPastBills = onNavigateToPastBills,
                 selectedIndex = 0
             )
         }
@@ -68,64 +78,75 @@ fun BillingScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(KfBackgroundDeep)
+                .background(KfBgSand)
         ) {
-            // ── Top status bar
-            BillingTopBar(
-                billCount   = state.cart.itemCount,
-                isListening = state.isListening
-            )
-
-            // ── Voice waveform + button (top section)
-            VoiceInputSection(
-                isListening = state.isListening,
-                voiceText   = state.voiceText,
-                onToggle    = viewModel::toggleListening
-            )
-
             // ── Cart list
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 if (state.cart.lines.isEmpty()) {
                     EmptyCartPlaceholder()
                 } else {
-                    CartList(
-                        lines     = state.cart.lines,
-                        onInc     = viewModel::incrementItem,
-                        onDec     = viewModel::decrementItem,
-                        onRemove  = viewModel::removeItem
-                    )
+                    LazyColumn(
+                        contentPadding     = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        itemsIndexed(state.cart.lines, key = { _, l -> l.catalogItemId }) { idx, line ->
+                            BillingCartCard(
+                                line    = line,
+                                onInc   = { viewModel.incrementItem(idx) },
+                                onDec   = { viewModel.decrementItem(idx) }
+                            )
+                        }
+
+                        // ── Listening chip (like "And 2 Maggi..." in the design)
+                        if (state.isListening || state.voiceText.isNotBlank()) {
+                            item {
+                                ListeningChip(voiceText = state.voiceText.ifBlank { "Listening…" })
+                            }
+                        }
+                    }
                 }
 
-                // Error snackbar overlay
+                // Error snackbar
                 state.lastError?.let { err ->
-                    ErrorBanner(
-                        message  = err,
-                        onDismiss = viewModel::clearError,
-                        modifier = Modifier.align(Alignment.TopCenter)
-                    )
+                    Surface(
+                        modifier = Modifier.align(Alignment.TopCenter).padding(16.dp),
+                        color    = KfError.copy(alpha = 0.93f),
+                        shape    = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Filled.Warning, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(err, color = Color.White, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            IconButton(onClick = viewModel::clearError, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Filled.Close, null, tint = Color.White, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    }
                 }
 
-                // Success overlay
-                AnimatedVisibility(
-                    visible = state.commitSuccess,
-                    enter   = fadeIn() + scaleIn(),
-                    exit    = fadeOut() + scaleOut(),
-                    modifier = Modifier.align(Alignment.Center)
-                ) {
-                    BillSavedOverlay { viewModel.acknowledgeSuccess() }
+                // Bill saved overlay
+                if (state.commitSuccess) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.4f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BillSavedOverlay { viewModel.acknowledgeSuccess() }
+                    }
                 }
             }
 
-            // ── Cart footer
-            CartFooter(
-                total      = state.cart.totalAmount,
-                itemCount  = state.cart.itemCount,
-                onDone     = viewModel::showPaymentSheet,
-                onClear    = viewModel::clearCart
+            // ── Cart footer + DONE button
+            BillingFooter(
+                total     = state.cart.totalAmount,
+                itemCount = state.cart.itemCount,
+                onDone    = viewModel::showPaymentSheet,
+                onClear   = viewModel::clearCart
             )
         }
     }
@@ -134,273 +155,262 @@ fun BillingScreen(
 // ─── Top Bar ──────────────────────────────────────────────────────────────────
 
 @Composable
-private fun BillingTopBar(billCount: Int, isListening: Boolean) {
-    Row(
+fun BillingTopBar(
+    billNumber: String,
+    itemCount: Int,
+    isListening: Boolean
+) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(KfBackgroundMid)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .background(KfBgSand)
     ) {
-        // Status dot
-        val dotColor = if (isListening) KfEmeraldVivid else KfOnline
-        val dotScale by animateFloatAsState(
-            targetValue = if (isListening) 1.3f else 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(600, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ), label = "dot"
-        )
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .scale(dotScale)
-                .clip(CircleShape)
-                .background(dotColor)
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text  = if (isListening) "LISTENING" else "ONLINE",
-            color = dotColor,
-            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-            letterSpacing = 1.sp
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text  = "Billing",
-            color = KfTextPrimary,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-        )
-        Spacer(Modifier.weight(1f))
-        // Bill count badge
-        if (billCount > 0) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // SYNCED dot
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(KfSynced))
+                Spacer(Modifier.width(6.dp))
+                Text("SYNCED", color = KfSynced, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 1.sp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Text("Billing", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = KfTextDark)
+            Spacer(Modifier.weight(1f))
+            KfTopBarActions()
+        }
+
+        // Bill pill row
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Bill number pill
             Surface(
-                color  = KfSurfaceElevated,
-                shape  = RoundedCornerShape(12.dp)
+                color  = KfCard,
+                shape  = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, KfBorderLight)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(modifier = Modifier.size(7.dp).clip(CircleShape).background(KfTeal))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Bill $billNumber",
+                        color = KfTextDark,
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            // LIVE badge
+            Surface(
+                color  = KfLive.copy(alpha = 0.12f),
+                shape  = RoundedCornerShape(6.dp),
+                border = BorderStroke(1.dp, KfLive.copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("LIVE", color = KfLive, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold, letterSpacing = 0.5.sp))
+                    Spacer(Modifier.width(4.dp))
+                    Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(KfLive))
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "Counter 1  •  $itemCount items verified",
+                color = KfTextLight,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        HorizontalDivider(color = KfBorderLight)
+    }
+}
+
+// ─── Top Bar Action buttons (speaker + profile) ───────────────────────────────
+
+@Composable
+fun KfTopBarActions() {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(
+            color  = KfNavy,
+            shape  = RoundedCornerShape(10.dp),
+            modifier = Modifier.size(36.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                Icon(Icons.Filled.VolumeUp, null, tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+        }
+        Surface(
+            color  = KfNavy,
+            shape  = RoundedCornerShape(10.dp),
+            modifier = Modifier.size(36.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                Icon(Icons.Filled.Person, null, tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+// ─── Billing Cart Card — matches design: dark qty badge, ✓OK, amber price ─────
+
+@Composable
+private fun BillingCartCard(
+    line: CartLine,
+    onInc: () -> Unit,
+    onDec: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color    = KfCard,
+        shape    = RoundedCornerShape(14.dp),
+        border   = BorderStroke(1.dp, KfBorderLight),
+        shadowElevation = 1.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Dark qty badge
+            Surface(
+                color  = KfNavy,
+                shape  = RoundedCornerShape(10.dp),
+                modifier = Modifier.size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Text(
+                        "${line.quantity.toInt()}×",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            // Item info
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        line.itemName,
+                        color    = KfTextDark,
+                        style    = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 110.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    // ✓ OK badge
+                    Surface(
+                        color  = KfOkBadgeBg,
+                        shape  = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            "✓ OK",
+                            color    = KfOkBadge,
+                            style    = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+                Text(
+                    "${line.quantity.toInt()} ${line.unit}  •  ₹${line.pricePerUnit.toInt()} each",
+                    color = KfTextLight,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1
+                )
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            // Price
+            Text(
+                "₹${line.lineTotal.toInt()}",
+                color = KfAmber,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+            )
+
+            Spacer(Modifier.width(8.dp))
+
+            // Stepper (– and +)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                CartStepperBtn(icon = Icons.Filled.Remove, onClick = onDec)
+                CartStepperBtn(icon = Icons.Filled.Add,    onClick = onInc, filled = true)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CartStepperBtn(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    filled: Boolean = false
+) {
+    Surface(
+        modifier = Modifier.size(30.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick),
+        color    = if (filled) KfBgSandDeep else KfCard,
+        shape    = RoundedCornerShape(6.dp),
+        border   = BorderStroke(1.dp, KfBorderLight)
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Icon(icon, null, tint = KfTextDark, modifier = Modifier.size(14.dp))
+        }
+    }
+}
+
+// ─── Listening chip — "And 2 Maggi..." | LISTENING ───────────────────────────
+
+@Composable
+private fun ListeningChip(voiceText: String) {
+    val infiniteTransition = rememberInfiniteTransition(label = "listenWave")
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color    = KfCard,
+        shape    = RoundedCornerShape(12.dp),
+        border   = BorderStroke(1.dp, KfBorderLight)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // mini waveform
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                listOf(10, 18, 12, 22, 14).forEachIndexed { i, h ->
+                    val scale by infiniteTransition.animateFloat(
+                        0.4f, 1f, infiniteRepeatable(tween(350 + i * 70), RepeatMode.Reverse), label = "w$i"
+                    )
+                    Box(modifier = Modifier.width(3.dp).height((h * scale).dp).clip(RoundedCornerShape(2.dp)).background(KfTeal.copy(alpha = 0.7f)))
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "\"${voiceText.take(28)}${if (voiceText.length > 28) "..." else ""}\"",
+                color = KfTextDark,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.weight(1f),
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.width(8.dp))
+            Surface(
+                color  = KfNavy,
+                shape  = RoundedCornerShape(8.dp)
             ) {
                 Text(
-                    text     = "$billCount items",
-                    color    = KfTextSecondary,
-                    style    = MaterialTheme.typography.labelSmall,
+                    "LISTENING",
+                    color    = Color.White,
+                    style    = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp),
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
-        }
-    }
-}
-
-// ─── Voice Input Section ──────────────────────────────────────────────────────
-
-@Composable
-private fun VoiceInputSection(
-    isListening: Boolean,
-    voiceText: String,
-    onToggle: () -> Unit
-) {
-    val haptic = LocalHapticFeedback.current
-    val pulseAnim = rememberInfiniteTransition(label = "pulse")
-    val pulseScale by pulseAnim.animateFloat(
-        initialValue = 1f,
-        targetValue  = if (isListening) 1.15f else 1f,
-        animationSpec = infiniteRepeatable(
-            animation  = tween(700, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ), label = "pulse"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(180.dp)
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(KfBackgroundMid, KfBackgroundDeep)
-                )
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        // Outer glow ring when listening
-        if (isListening) {
-            Box(
-                modifier = Modifier
-                    .size(130.dp)
-                    .scale(pulseScale)
-                    .clip(CircleShape)
-                    .background(KfEmeraldBright.copy(alpha = 0.12f))
-            )
-        }
-
-        // Main mic button
-        Box(
-            modifier = Modifier
-                .size(90.dp)
-                .clip(CircleShape)
-                .background(
-                    if (isListening)
-                        Brush.radialGradient(listOf(KfEmeraldBright, KfEmerald))
-                    else
-                        Brush.radialGradient(listOf(KfSurfaceElevated, KfSurface))
-                )
-                .clickable {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onToggle()
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector  = if (isListening) Icons.Filled.Mic else Icons.Outlined.MicNone,
-                contentDescription = "Tap to speak",
-                tint   = if (isListening) KfBackgroundDeep else KfEmeraldBright,
-                modifier = Modifier.size(40.dp)
-            )
-        }
-
-        // Voice text caption
-        if (voiceText.isNotBlank()) {
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 8.dp)
-                    .widthIn(max = 280.dp),
-                color = KfSurfaceElevated,
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                Text(
-                    text     = "\"$voiceText\"",
-                    color    = KfAmberBright,
-                    style    = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                )
-            }
-        } else {
-            Text(
-                text     = if (isListening) "LISTENING" else "TAP & SPEAK\nBoliye aur bill banayein",
-                color    = if (isListening) KfEmeraldGlow else KfTextDisabled,
-                style    = MaterialTheme.typography.labelMedium,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)
-            )
-        }
-    }
-}
-
-// ─── Cart List ────────────────────────────────────────────────────────────────
-
-@Composable
-private fun CartList(
-    lines: List<CartLine>,
-    onInc: (Int) -> Unit,
-    onDec: (Int) -> Unit,
-    onRemove: (Int) -> Unit
-) {
-    LazyColumn(
-        contentPadding     = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        itemsIndexed(lines, key = { _, l -> l.catalogItemId }) { idx, line ->
-            CartLineCard(line = line, onInc = { onInc(idx) }, onDec = { onDec(idx) }, onRemove = { onRemove(idx) })
-        }
-    }
-}
-
-@Composable
-private fun CartLineCard(
-    line: CartLine,
-    onInc: () -> Unit,
-    onDec: () -> Unit,
-    onRemove: () -> Unit
-) {
-    Surface(
-        modifier      = Modifier.fillMaxWidth(),
-        color         = KfSurface,
-        shape         = RoundedCornerShape(12.dp),
-        border        = BorderStroke(1.dp, KfBorderSubtle)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Inventory type dot
-            val dotColor = if (line.inventoryType == InventoryType.STOCK) KfStock else KfFlow
-            Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(dotColor)
-            )
-            Spacer(Modifier.width(10.dp))
-
-            // Item name + unit
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text  = line.itemName,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = KfTextPrimary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text  = "₹${line.pricePerUnit.toInt()} / ${line.unit}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = KfTextSecondary
-                )
-            }
-
-            // Quantity stepper
-            QuantityStepper(qty = line.quantity, unit = line.unit, onInc = onInc, onDec = onDec)
-
-            Spacer(Modifier.width(10.dp))
-
-            // Line total
-            Text(
-                text  = "₹${line.lineTotal.toInt()}",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = KfEmeraldBright
-            )
-
-            Spacer(Modifier.width(6.dp))
-
-            // Remove
-            IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Filled.Close, "Remove", tint = KfTextDisabled, modifier = Modifier.size(16.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun QuantityStepper(qty: Double, unit: String, onInc: () -> Unit, onDec: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        IconButton(
-            onClick  = onDec,
-            modifier = Modifier
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(KfSurfaceElevated)
-        ) {
-            Icon(Icons.Filled.Remove, "-", tint = KfTextPrimary, modifier = Modifier.size(14.dp))
-        }
-
-        Text(
-            text  = if (qty == qty.toLong().toDouble()) "${qty.toLong()}" else "$qty",
-            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-            color = KfTextPrimary,
-            modifier = Modifier.widthIn(min = 24.dp),
-            textAlign = TextAlign.Center
-        )
-
-        IconButton(
-            onClick  = onInc,
-            modifier = Modifier
-                .size(28.dp)
-                .clip(CircleShape)
-                .background(KfEmerald)
-        ) {
-            Icon(Icons.Filled.Add, "+", tint = KfTextPrimary, modifier = Modifier.size(14.dp))
         }
     }
 }
@@ -414,100 +424,90 @@ private fun EmptyCartPlaceholder() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            imageVector = Icons.Outlined.ShoppingCart,
-            contentDescription = null,
-            tint     = KfBorderStrong,
-            modifier = Modifier.size(64.dp)
-        )
-        Spacer(Modifier.height(12.dp))
-        Text("Speak an item to start billing", color = KfTextDisabled, style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(4.dp))
-        Text("e.g. \"Rendu Parle-G\"", color = KfAmberBright.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
+        Icon(Icons.Outlined.ShoppingBag, null, tint = KfBorderMid, modifier = Modifier.size(60.dp))
+        Spacer(Modifier.height(14.dp))
+        Text("Cart is empty", color = KfTextMid, style = MaterialTheme.typography.titleSmall)
+        Text("Go back and speak an item", color = KfTextLight, style = MaterialTheme.typography.bodySmall)
     }
 }
 
 // ─── Cart Footer ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun CartFooter(
+private fun BillingFooter(
     total: Double,
     itemCount: Int,
     onDone: () -> Unit,
     onClear: () -> Unit
 ) {
-    Surface(
-        color  = KfSurface,
-        shadowElevation = 8.dp
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(KfBgSand)
+            .padding(horizontal = 16.dp)
     ) {
+        HorizontalDivider(color = KfBorderLight)
+        Spacer(Modifier.height(10.dp))
+
+        // Items count + Total row
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(
-                    text  = "$itemCount Items",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = KfTextSecondary
-                )
-                Text(
-                    text  = "Total: ₹${total.toInt()}",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = KfTextPrimary
-                )
-            }
-
+            Icon(Icons.Outlined.ShoppingBag, null, tint = KfTextMid, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "$itemCount Items",
+                color = KfTextMid,
+                style = MaterialTheme.typography.bodyMedium
+            )
             Spacer(Modifier.weight(1f))
+            Text("Total: ", color = KfTextMid, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "₹${total.toInt()}",
+                color = KfTextDark,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Black)
+            )
+        }
 
-            if (itemCount > 0) {
-                TextButton(onClick = onClear) {
-                    Text("Clear", color = KfError)
-                }
-                Spacer(Modifier.width(8.dp))
-            }
+        Spacer(Modifier.height(10.dp))
 
+        // DONE button row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // DONE main button
             Button(
                 onClick  = onDone,
                 enabled  = itemCount > 0,
+                modifier = Modifier.weight(1f).height(54.dp),
                 colors   = ButtonDefaults.buttonColors(
-                    containerColor = KfEmeraldBright,
-                    contentColor   = KfBackgroundDeep,
-                    disabledContainerColor = KfBorderSubtle
+                    containerColor         = KfNavy,
+                    contentColor           = Color.White,
+                    disabledContainerColor = KfBgSandDeep
                 ),
-                shape    = RoundedCornerShape(12.dp),
-                modifier = Modifier.height(48.dp)
+                shape = RoundedCornerShape(14.dp)
             ) {
-                Icon(Icons.Filled.CheckCircle, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("DONE", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                Icon(Icons.Filled.CheckCircle, null, tint = KfTealVivid, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("DONE", fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+            }
+
+            // Speaker mini button
+            Surface(
+                color    = KfAmber.copy(alpha = 0.15f),
+                shape    = RoundedCornerShape(14.dp),
+                border   = BorderStroke(1.dp, KfAmber.copy(alpha = 0.4f)),
+                modifier = Modifier.size(54.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Icon(Icons.Filled.VolumeUp, null, tint = KfAmber, modifier = Modifier.size(22.dp))
+                }
             }
         }
-    }
-}
-
-// ─── Error Banner ─────────────────────────────────────────────────────────────
-
-@Composable
-private fun ErrorBanner(message: String, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.padding(16.dp),
-        color    = KfError.copy(alpha = 0.92f),
-        shape    = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Filled.Warning, null, tint = Color.White, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(message, color = Color.White, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            Spacer(Modifier.width(8.dp))
-            IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
-                Icon(Icons.Filled.Close, "Dismiss", tint = Color.White, modifier = Modifier.size(16.dp))
-            }
-        }
+        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -520,23 +520,19 @@ private fun BillSavedOverlay(onDismiss: () -> Unit) {
         onDismiss()
     }
     Surface(
-        color  = KfEmeraldDark.copy(alpha = 0.95f),
+        color  = KfCard,
         shape  = RoundedCornerShape(20.dp),
-        border = BorderStroke(1.dp, KfEmeraldBright)
+        border = BorderStroke(2.dp, KfTeal),
+        shadowElevation = 8.dp
     ) {
         Column(
             modifier = Modifier.padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                Icons.Filled.CheckCircle,
-                "Bill saved",
-                tint     = KfEmeraldGlow,
-                modifier = Modifier.size(56.dp)
-            )
+            Icon(Icons.Filled.CheckCircle, null, tint = KfTeal, modifier = Modifier.size(56.dp))
             Spacer(Modifier.height(12.dp))
-            Text("Bill Saved!", color = KfTextPrimary, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
-            Text("Ready for next customer", color = KfTextSecondary, style = MaterialTheme.typography.bodySmall)
+            Text("Bill Saved!", color = KfTextDark, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold))
+            Text("Ready for next customer", color = KfTextLight, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -550,50 +546,88 @@ fun KfBottomBar(
     onPastBills: () -> Unit,
     selectedIndex: Int
 ) {
-    Surface(
-        color         = KfSurface,
-        shadowElevation = 12.dp
-    ) {
+    Surface(color = KfNavy, shadowElevation = 12.dp) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(64.dp),
+            modifier = Modifier.fillMaxWidth().height(68.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            KfNavItem(Icons.Outlined.Receipt, Icons.Filled.Receipt,       "Bill",      selectedIndex == 0, onBill)
-            KfNavItem(Icons.Outlined.Inventory2, Icons.Filled.Inventory2, "Stock",     selectedIndex == 1, onStock)
-            KfNavItem(Icons.Outlined.History, Icons.Filled.History,       "Past Bills", selectedIndex == 2, onPastBills)
+            KfNavItem(
+                unselected = Icons.Outlined.Mic,
+                selected   = Icons.Filled.Mic,
+                label      = "Bill",
+                isSelected = selectedIndex == 0,
+                isMic      = true,
+                onClick    = onBill
+            )
+            KfNavItem(
+                unselected = Icons.Outlined.Inventory2,
+                selected   = Icons.Filled.Inventory2,
+                label      = "Stock",
+                isSelected = selectedIndex == 1,
+                onClick    = onStock
+            )
+            KfNavItem(
+                unselected = Icons.Outlined.History,
+                selected   = Icons.Filled.History,
+                label      = "Past Bills",
+                isSelected = selectedIndex == 2,
+                onClick    = onPastBills
+            )
         }
     }
 }
 
 @Composable
 private fun KfNavItem(
-    unselectedIcon: androidx.compose.ui.graphics.vector.ImageVector,
-    selectedIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    unselected: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
-    selected: Boolean,
+    isSelected: Boolean,
+    isMic: Boolean = false,
     onClick: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Icon(
-            imageVector = if (selected) selectedIcon else unselectedIcon,
-            contentDescription = label,
-            tint     = if (selected) KfEmeraldBright else KfTextDisabled,
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text  = label,
-            color = if (selected) KfEmeraldBright else KfTextDisabled,
-            style = MaterialTheme.typography.labelSmall
-        )
+    if (isMic && isSelected) {
+        // Big pill for selected mic
+        Surface(
+            modifier = Modifier
+                .clip(RoundedCornerShape(16.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            color = Color.Transparent
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment     = Alignment.CenterVertically,
+                modifier = Modifier
+                    .background(KfNavyLight, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Icon(selected, label, tint = Color.White, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(label, color = Color.White, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+            }
+        }
+    } else {
+        Column(
+            modifier = Modifier
+                .clip(RoundedCornerShape(10.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                if (isSelected) selected else unselected,
+                label,
+                tint     = if (isSelected) Color.White else Color.White.copy(alpha = 0.5f),
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                label,
+                color = if (isSelected) Color.White else Color.White.copy(alpha = 0.5f),
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
     }
 }
