@@ -70,6 +70,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:database"))
     implementation(project(":core:data"))
+    implementation(project(":core:domain"))
 
     // AndroidX & UI
     implementation(libs.androidx.core.ktx)

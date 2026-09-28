@@ -12,6 +12,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.kiranaflow.core.domain.usecase.AddItemFromVoiceUseCase
+import com.kiranaflow.core.domain.usecase.CommitBillUseCase
+import com.kiranaflow.core.domain.usecase.RecoverPendingBillsUseCase
+import com.kiranaflow.core.domain.usecase.RemoveLastItemUseCase
 
 data class BillingUiState(
     val cart: Cart = Cart(),
@@ -31,7 +35,11 @@ data class BillingUiState(
 class BillingViewModel @Inject constructor(
     private val repository: KiranaRepository,
     private val voiceService: VoiceRecognitionService,
-    private val vibrator: Vibrator
+    private val vibrator: Vibrator,
+    private val addItemFromVoiceUseCase: AddItemFromVoiceUseCase,
+    private val removeLastItemUseCase: RemoveLastItemUseCase,
+    private val commitBillUseCase: CommitBillUseCase,
+    private val recoverPendingBillsUseCase: RecoverPendingBillsUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BillingUiState())
@@ -62,7 +70,7 @@ class BillingViewModel @Inject constructor(
 
         // WAL recovery on startup
         viewModelScope.launch {
-            repository.replayPendingBills()
+            recoverPendingBillsUseCase()
         }
     }
 
@@ -122,28 +130,23 @@ class BillingViewModel @Inject constructor(
         val itemQuery = command.item ?: return
         val catalog = _uiState.value.catalog
 
-        val matched = repository.findBestMatch(itemQuery, catalog)
-        if (matched == null) {
+        val previousCart = _uiState.value.cart
+        val updatedCart = addItemFromVoiceUseCase(
+            cart = previousCart,
+            rawItemName = itemQuery,
+            quantityDisplayUnits = command.quantity,
+            catalog = catalog
+        )
+
+        if (updatedCart == previousCart) {
             buzz(type = BuzzType.ERROR)
             _uiState.update { it.copy(lastError = "\"$itemQuery\" not in catalog") }
             return
         }
 
-        val rawUnit = command.unit ?: matched.unit
-        val displayUnit = DisplayUnit.fromString(rawUnit)
-        val quantityBaseUnits = Quantity.of(command.quantity, displayUnit).baseUnits
-
-        val line = CartLine(
-            catalogItemId     = matched.id,
-            itemName          = matched.name,
-            quantityBaseUnits = quantityBaseUnits,
-            unit              = displayUnit.label,
-            pricePerUnitPaise = matched.pricePaise,
-            inventoryType     = matched.inventoryType
-        )
-
+        val addedLine = updatedCart.lines.lastOrNull()
+        val matched = catalog.find { it.id == addedLine?.catalogItemId }
         buzz(type = BuzzType.SUCCESS)
-        val updatedCart = _uiState.value.cart.addOrUpdate(line)
         _uiState.update { state ->
             state.copy(
                 cart            = updatedCart,
@@ -152,15 +155,13 @@ class BillingViewModel @Inject constructor(
                 voiceText       = ""
             )
         }
-        repository.saveDraftCart(updatedCart)
     }
 
     private fun handleRemoveLast() {
         buzz(type = BuzzType.LIGHT)
-        val updatedCart = _uiState.value.cart.removeLast()
-        _uiState.update { it.copy(cart = updatedCart, lastError = null) }
         viewModelScope.launch {
-            repository.saveDraftCart(updatedCart)
+            val updatedCart = removeLastItemUseCase(_uiState.value.cart)
+            _uiState.update { it.copy(cart = updatedCart, lastError = null) }
         }
     }
 
@@ -244,7 +245,7 @@ class BillingViewModel @Inject constructor(
             val tenderedPaise = state.tenderedAmount.toDoubleOrNull()?.let { (it * 100.0 + 0.5).toLong() }
                 ?: state.cart.totalPaise
 
-            val result = repository.commitBill(
+            val result = commitBillUseCase(
                 cartLines     = state.cart.lines,
                 paymentMode   = state.paymentMode,
                 tenderedPaise = tenderedPaise

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import javax.inject.Inject
+import com.kiranaflow.core.domain.usecase.VoidBillUseCase
 
 data class PastBillsUiState(
     val bills: List<Bill>            = emptyList(),
@@ -20,7 +21,8 @@ data class PastBillsUiState(
 
 @HiltViewModel
 class PastBillsViewModel @Inject constructor(
-    private val repository: KiranaRepository
+    private val repository: KiranaRepository,
+    private val voidBillUseCase: VoidBillUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PastBillsUiState())
@@ -46,6 +48,12 @@ class PastBillsViewModel @Inject constructor(
         viewModelScope.launch {
             val items = repository.getBillItems(bill.id)
             _uiState.update { it.copy(selectedBill = bill, selectedBillItems = items) }
+        }
+    }
+
+    fun voidBill(billId: String, reason: String = "Customer Void") {
+        viewModelScope.launch {
+            voidBillUseCase(billId, reason)
         }
     }
 

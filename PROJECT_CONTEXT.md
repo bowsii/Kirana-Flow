@@ -150,6 +150,7 @@ app/
 ### 🏗️ Phase 2 — Multi-Module Refactoring (In Progress)
 - **Step 1 — Gradle convention plugins**: Implemented in `build-logic/convention` with precompiled convention plugins (`android.library`, `android.room`, `android.hilt`, `android.compose`, `jvm.library`) and clean version catalog.
 - **Step 2 — Core module extraction**: Extracted `:core:common` (UUIDv7, utils), `:core:model` (entities, value classes Money/Quantity), `:core:database` (Room database, migrations, DAOs, SQLCipher Keystore security, Hilt DatabaseModule), `:core:data` (Repositories, WAL BillingQueue, CatalogValidator). All tests from Section A passing.
+- **Step 3 — Domain use cases**: Extracted `:core:domain` with use cases `AddItemFromVoiceUseCase`, `RemoveLastItemUseCase`, `CommitBillUseCase`, `RecoverPendingBillsUseCase`, `GetReorderListUseCase`, `GetTomorrowFlowPlanUseCase`, `VoidBillUseCase`, and `CloseBusinessDayUseCase`. Refactored ViewModels to invoke domain use cases only. All tests passing.
 
 ---
 
@@ -158,7 +159,7 @@ app/
 | Phase | Description | Status |
 |---|---|---|
 | Phase 1 | Data correctness & transactional integrity | ✅ Completed |
-| Phase 2 | Clean multi-module architecture, domain use cases, engine interfaces | 🟡 In Progress (Steps 1 & 2 done) |
+| Phase 2 | Clean multi-module architecture, domain use cases, engine interfaces | 🟡 In Progress (Steps 1, 2, 3 done) |
 | Phase 3 | Voice pipeline hardening: AudioRecord 16kHz PCM, Silero VAD, keyword spotter, offline Tamil pack, Tamil fractions parser | Pending |
 | Phase 4 | On-device models: Whisper-Small INT8, Gemma-3n-E2B INT4, Play Asset Delivery, QNN/Hexagon NPU binding | Pending |
 | Phase 5 | CameraX barcode scanner, daily FLOW report WhatsApp share, local UPI QR generator, Tamil/English string localization | Pending |

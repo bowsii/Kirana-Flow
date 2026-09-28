@@ -13,6 +13,9 @@ import javax.inject.Inject
 import com.kiranaflow.core.model.BusinessDayManager
 import com.kiranaflow.core.model.DaySummary
 import com.kiranaflow.core.model.FlowPurchasePlanItem
+import com.kiranaflow.core.domain.usecase.CloseBusinessDayUseCase
+import com.kiranaflow.core.domain.usecase.GetReorderListUseCase
+import com.kiranaflow.core.domain.usecase.GetTomorrowFlowPlanUseCase
 
 data class StockUiState(
     val catalog: List<CatalogItem>       = emptyList(),
@@ -33,7 +36,10 @@ data class StockUiState(
 @HiltViewModel
 class StockViewModel @Inject constructor(
     private val repository: KiranaRepository,
-    private val businessDayManager: BusinessDayManager
+    private val businessDayManager: BusinessDayManager,
+    private val closeBusinessDayUseCase: CloseBusinessDayUseCase,
+    private val getReorderListUseCase: GetReorderListUseCase,
+    private val getTomorrowFlowPlanUseCase: GetTomorrowFlowPlanUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(StockUiState())
@@ -115,7 +121,7 @@ class StockViewModel @Inject constructor(
     fun openCloseDayDialog() {
         viewModelScope.launch {
             val bDate = businessDayManager.getBusinessDate()
-            val summary = repository.closeBusinessDay(bDate)
+            val summary = closeBusinessDayUseCase(bDate)
             _uiState.update {
                 it.copy(
                     businessDate = bDate,
