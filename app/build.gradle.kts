@@ -74,6 +74,10 @@ dependencies {
     implementation(project(":ai:runtime"))
     implementation(project(":ai:asr"))
     implementation(project(":ai:nlu"))
+    implementation(project(":core:ui"))
+    implementation(project(":feature:billing"))
+    implementation(project(":feature:stock"))
+    implementation(project(":feature:pastbills"))
 
     // AndroidX & UI
     implementation(libs.androidx.core.ktx)

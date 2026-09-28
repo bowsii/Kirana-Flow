@@ -8,11 +8,11 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.kiranaflow.app.ui.screens.billing.BillingScreen
-import com.kiranaflow.app.ui.screens.billing.BillingViewModel
-import com.kiranaflow.app.ui.screens.pastbills.PastBillsScreen
-import com.kiranaflow.app.ui.screens.speak.SpeakScreen
-import com.kiranaflow.app.ui.screens.stock.StockScreen
+import com.kiranaflow.feature.billing.BillingScreen
+import com.kiranaflow.feature.billing.BillingViewModel
+import com.kiranaflow.feature.billing.SpeakScreen
+import com.kiranaflow.feature.pastbills.PastBillsScreen
+import com.kiranaflow.feature.stock.StockScreen
 
 object Routes {
     const val SPEAK      = "speak"       // Landing: mic button
