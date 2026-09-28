@@ -12,10 +12,13 @@ val KfBgSandMid       = Color(0xFFD8D1BC)   // pressed/active
 val KfCard            = Color(0xFFFFFFFF)   // card surface — pure white
 val KfCardTinted      = Color(0xFFF8F4ED)   // slightly warm card
 
-// ─── Dark Navy (CTAs, bottom nav, primary buttons)
-val KfNavy            = Color(0xFF1C2333)   // dark navy — primary button bg
-val KfNavyLight       = Color(0xFF252E42)   // slightly lighter navy
-val KfNavyMid         = Color(0xFF303D58)   // nav item tinted
+// ─── Deep Charcoal Forest (CTAs, bottom nav, primary buttons — near-black, zero blue)
+val KfCharcoalForest  = Color(0xFF121714)   // deep charcoal forest near-black
+val KfCharcoalLight   = Color(0xFF1D2420)   // slightly lighter charcoal
+val KfCharcoalMid     = Color(0xFF28332C)   // charcoal tinted
+val KfNavy            = KfCharcoalForest    // alias for compatibility
+val KfNavyLight       = KfCharcoalLight
+val KfNavyMid         = KfCharcoalMid
 
 // ─── Teal / Forest Green (Speak button, selected states, STOCK)
 val KfTealDark        = Color(0xFF1E5C4A)   // dark teal

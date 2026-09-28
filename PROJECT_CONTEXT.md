@@ -43,13 +43,13 @@ KiranaFlow is an **offline-first, voice-powered Android POS** for kirana shop ow
 | Background Deep | Muted Sand | #E0DAC8 |
 | Surface / Cards | Pure White | #FFFFFF |
 | Primary Action / Header | Deep Forest Teal | #2D6E5E |
-| Secondary CTA / Navy | Dark Navy Charcoal | #1C2333 |
+| Secondary CTA / Deep Charcoal | Deep Charcoal Forest | #121714 |
 | Amount & Accents | Rich Amber / Ochre | #E09B1A |
 | Success / Badges | Green Mint | #4CAF50 |
 | Error / Danger | Crimson Red | #E53E3E |
 
 > **Approved Palette Rule:**
-> The active approved palette is the Warm Sand & Deep Accents mockup palette exclusively (`#EDE8DC`, `#2D6E5E`, `#1C2333`, `#E09B1A`). No violet, indigo, or blue AI palette colors are permitted anywhere in the codebase.
+> The active approved palette is the Warm Sand & Deep Accents mockup palette exclusively (`#EDE8DC`, `#2D6E5E`, `#121714`, `#E09B1A`). No violet, indigo, navy, or blue AI palette colors are permitted anywhere in the codebase.
 
 **Tech Stack Used (all free):**
 | Component | Technology |
