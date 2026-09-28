@@ -21,9 +21,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.kiranaflow.app.data.model.Bill
-import com.kiranaflow.app.data.model.BillItem
-import com.kiranaflow.app.data.model.PaymentMode
+import com.kiranaflow.core.model.Bill
+import com.kiranaflow.core.model.BillItem
+import com.kiranaflow.core.model.PaymentMode
 import com.kiranaflow.app.ui.screens.billing.KfBottomBar
 import com.kiranaflow.app.ui.screens.billing.KfTopBarActions
 import com.kiranaflow.app.ui.theme.*

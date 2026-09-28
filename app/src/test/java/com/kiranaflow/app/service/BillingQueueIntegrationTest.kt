@@ -3,10 +3,12 @@ package com.kiranaflow.app.service
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.kiranaflow.app.data.db.*
-import com.kiranaflow.app.data.model.*
-import com.kiranaflow.app.data.repository.KiranaRepository
-import com.kiranaflow.app.util.UuidV7
+import com.kiranaflow.core.database.*
+import com.kiranaflow.core.model.*
+import com.kiranaflow.core.data.KiranaRepository
+import com.kiranaflow.core.data.BillingQueue
+import com.kiranaflow.core.data.CatalogValidator
+import com.kiranaflow.core.common.UuidV7
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After

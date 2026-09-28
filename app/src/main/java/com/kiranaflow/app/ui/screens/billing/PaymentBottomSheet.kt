@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.kiranaflow.app.data.model.PaymentMode
+import com.kiranaflow.core.model.PaymentMode
 import com.kiranaflow.app.ui.theme.*
 
 /**

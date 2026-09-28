@@ -23,8 +23,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.kiranaflow.app.data.model.CartLine
-import com.kiranaflow.app.data.model.InventoryType
+import com.kiranaflow.core.model.CartLine
+import com.kiranaflow.core.model.InventoryType
 import com.kiranaflow.app.ui.theme.*
 
 /**

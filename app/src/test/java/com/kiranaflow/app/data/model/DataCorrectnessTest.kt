@@ -1,6 +1,6 @@
-package com.kiranaflow.app.data.model
+package com.kiranaflow.core.model
 
-import com.kiranaflow.app.util.UuidV7
+import com.kiranaflow.core.common.UuidV7
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.UUID

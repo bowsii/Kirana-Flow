@@ -1,7 +1,7 @@
 package com.kiranaflow.app.service
 
-import com.kiranaflow.app.data.model.CommandIntent
-import com.kiranaflow.app.data.model.VoiceCommand
+import com.kiranaflow.core.model.CommandIntent
+import com.kiranaflow.core.model.VoiceCommand
 import javax.inject.Inject
 import javax.inject.Singleton
 

@@ -4,9 +4,9 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.kiranaflow.app.data.model.*
-import com.kiranaflow.app.data.repository.KiranaRepository
-import com.kiranaflow.app.service.BillingQueue
+import com.kiranaflow.core.model.*
+import com.kiranaflow.core.data.KiranaRepository
+import com.kiranaflow.core.data.BillingQueue
 import com.kiranaflow.app.service.VoiceRecognitionService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*

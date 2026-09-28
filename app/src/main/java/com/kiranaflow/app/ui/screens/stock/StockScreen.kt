@@ -26,9 +26,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import android.content.Intent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
-import com.kiranaflow.app.data.model.CatalogItem
-import com.kiranaflow.app.data.model.DaySummary
-import com.kiranaflow.app.data.model.InventoryType
+import com.kiranaflow.core.model.CatalogItem
+import com.kiranaflow.core.model.DaySummary
+import com.kiranaflow.core.model.InventoryType
 import com.kiranaflow.app.ui.screens.billing.KfBottomBar
 import com.kiranaflow.app.ui.screens.billing.KfTopBarActions
 import com.kiranaflow.app.ui.theme.*

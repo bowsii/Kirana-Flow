@@ -2,9 +2,9 @@ package com.kiranaflow.app.ui.screens.pastbills
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.kiranaflow.app.data.model.Bill
-import com.kiranaflow.app.data.model.BillItem
-import com.kiranaflow.app.data.repository.KiranaRepository
+import com.kiranaflow.core.model.Bill
+import com.kiranaflow.core.model.BillItem
+import com.kiranaflow.core.data.KiranaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch

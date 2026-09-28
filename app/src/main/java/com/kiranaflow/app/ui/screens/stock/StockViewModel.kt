@@ -2,17 +2,17 @@ package com.kiranaflow.app.ui.screens.stock
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.kiranaflow.app.data.model.CatalogItem
-import com.kiranaflow.app.data.repository.KiranaRepository
+import com.kiranaflow.core.model.CatalogItem
+import com.kiranaflow.core.data.KiranaRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
 import javax.inject.Inject
 
-import com.kiranaflow.app.data.model.BusinessDayManager
-import com.kiranaflow.app.data.model.DaySummary
-import com.kiranaflow.app.data.model.FlowPurchasePlanItem
+import com.kiranaflow.core.model.BusinessDayManager
+import com.kiranaflow.core.model.DaySummary
+import com.kiranaflow.core.model.FlowPurchasePlanItem
 
 data class StockUiState(
     val catalog: List<CatalogItem>       = emptyList(),
@@ -61,10 +61,10 @@ class StockViewModel @Inject constructor(
 
                 // Split by payment mode
                 val cash = todayBills
-                    .filter { it.paymentMode == com.kiranaflow.app.data.model.PaymentMode.CASH }
+                    .filter { it.paymentMode == com.kiranaflow.core.model.PaymentMode.CASH }
                     .sumOf { it.totalAmount }
                 val upi = todayBills
-                    .filter { it.paymentMode != com.kiranaflow.app.data.model.PaymentMode.CASH }
+                    .filter { it.paymentMode != com.kiranaflow.core.model.PaymentMode.CASH }
                     .sumOf { it.totalAmount }
 
                 val currentDate = businessDayManager.getBusinessDate()
