@@ -105,16 +105,48 @@ app/
 |---|---|---|
 | 2026-09-28 | Stage 1 | feat: Stage 1 - Android foundation, billing UI, NLU engine, Room + WAL |
 | 2026-09-28 | UI Redesign | feat: Pixel-accurate UI redesign matching design mockups (Speak, Billing, Payment modal, Stock dashboard) |
+| 2026-09-28 | Phase 1 | feat(core): Phase 1 Data correctness - Money/Quantity value classes, durable WAL journal, serial transaction queue actor, movement ledger, draft cart recovery, UUIDv7 |
 
 ---
 
-## Planned Production Refinement (Phases 1-6)
+## Production Refinement Status
 
-| Phase | Description |
-|---|---|
-| Phase 1 | Data correctness: Money/Quantity value classes (paise/base units), durable bill journal table, serial transaction queue actor channel, stock movement ledger & flow daily table, crash-resilient draft cart, UUIDv7 & audit columns, Room hygiene |
-| Phase 2 | Clean multi-module architecture (:core:model, :core:database, :core:domain, :feature:billing, :ai:asr, etc.), use cases, engine interfaces |
-| Phase 3 | Voice pipeline hardening: AudioRecord 16kHz PCM, Silero VAD endpointing, keyword spotting, offline Tamil pack validation, Tamil fractions & weights parser |
-| Phase 4 | On-device models: Whisper-Small INT8, Gemma-3n-E2B INT4, Play Asset Delivery, QNN/Hexagon NPU runtime binding |
-| Phase 5 | CameraX barcode scanner, daily FLOW report & WhatsApp share, local UPI QR generator, Tamil/English string localization |
-| Phase 6 | Golden utterance eval, unit & instrumentation tests, offline structured telemetry, CI/CD & release build |
+### ✅ Phase 1: Data Correctness (Completed)
+1. **Money and Quantities**:
+   - `Money` value class: All monetary amounts stored as `Long` in paise (1 INR = 100 paise). Unit-safe arithmetic, Indian number formatting (e.g., `₹16,420`).
+   - `Quantity` value class: All quantities stored as `Long` in base units (grams, milliliters, pieces). `DisplayUnit` defines multipliers and labels (`kg`, `g`, `L`, `ml`, `dozen`, `pack`, `pcs`).
+2. **Durable Write-Ahead Log (WAL)**:
+   - `bill_journal` table: `journalId` (UUIDv7), `billId`, `payloadJson`, `status` (`PENDING`, `APPLIED`), `createdAt`, `appliedAt`.
+   - Atomic `@Transaction` commits Bill + BillItems + StockMovements + FlowDaily, and updates journal status to `APPLIED`.
+   - Idempotent crash recovery on application startup (`replayPendingJournals()`).
+3. **Serial Transaction Queue (Actor Pattern)**:
+   - Single-consumer Kotlin `Channel` running in application-scoped coroutine.
+   - Strict FIFO ordering for bill commits. UI observes `Flow<CommitResult>`.
+4. **Inventory Movement Ledger**:
+   - `stock_movements` table: `id`, `itemId`, `deltaBaseUnits`, `reason` (`SALE`, `PURCHASE`, `ADJUSTMENT`, `RETURN`, `VOID`), `refId`, `businessDate`, `createdAt`.
+   - Materialized `stockBaseUnits` column updated in same transaction, with `computeStockFromLedger` rebuild routine.
+   - `flow_daily` table: Aggregates daily sold units per item per business day for fresh goods.
+5. **Configurable Business Day Boundary**:
+   - `BusinessDayManager` with configurable cutoff hour (default 2 AM) for late-night kirana operations.
+6. **Active Cart Crash Resilience**:
+   - `draft_cart` table auto-persists in-progress cart on every mutation and restores on app relaunch.
+7. **Sync-Ready Identifiers & Audit Columns**:
+   - Primary keys use time-ordered RFC 9562 `UuidV7`.
+   - All business entities include `deviceId`, `createdAt`, `updatedAt`, and `deletedAt` (soft delete).
+8. **Room Hygiene & Schema Export**:
+   - `exportSchema = true` enabled with schema JSON committed to `app/schemas/`.
+9. **Automated Testing**:
+   - Unit tests covering `Money`, `Quantity`, `UuidV7`, and `BusinessDayManager` pass cleanly in `./gradlew test`.
+
+---
+
+## Planned Production Refinement (Phases 2-6)
+
+| Phase | Description | Status |
+|---|---|---|
+| Phase 1 | Data correctness & transactional integrity | ✅ Completed |
+| Phase 2 | Clean multi-module architecture, domain use cases, engine interfaces | Pending |
+| Phase 3 | Voice pipeline hardening: AudioRecord 16kHz PCM, Silero VAD, keyword spotter, offline Tamil pack, Tamil fractions parser | Pending |
+| Phase 4 | On-device models: Whisper-Small INT8, Gemma-3n-E2B INT4, Play Asset Delivery, QNN/Hexagon NPU binding | Pending |
+| Phase 5 | CameraX barcode scanner, daily FLOW report WhatsApp share, local UPI QR generator, Tamil/English string localization | Pending |
+| Phase 6 | Golden utterance evaluation, unit & instrumentation tests, offline telemetry, CI/CD & release build | Pending |

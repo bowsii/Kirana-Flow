@@ -7,28 +7,25 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface CatalogDao {
 
-    @Query("SELECT * FROM catalog_items WHERE isActive = 1 ORDER BY name ASC")
+    @Query("SELECT * FROM catalog_items WHERE isActive = 1 AND deletedAt IS NULL ORDER BY name ASC")
     fun getAllActive(): Flow<List<CatalogItem>>
 
-    @Query("SELECT * FROM catalog_items WHERE id = :id LIMIT 1")
-    suspend fun getById(id: Long): CatalogItem?
+    @Query("SELECT * FROM catalog_items WHERE id = :id AND deletedAt IS NULL LIMIT 1")
+    suspend fun getById(id: String): CatalogItem?
 
-    /**
-     * Full-text fuzzy search: name OR aliases contain the query.
-     */
     @Query("""
         SELECT * FROM catalog_items 
-        WHERE isActive = 1 
+        WHERE isActive = 1 AND deletedAt IS NULL
           AND (name LIKE '%' || :query || '%' OR aliases LIKE '%' || :query || '%')
         ORDER BY 
             CASE WHEN name LIKE :query || '%' THEN 0 ELSE 1 END,
             name ASC
-        LIMIT 10
+        LIMIT 15
     """)
     suspend fun search(query: String): List<CatalogItem>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(item: CatalogItem): Long
+    suspend fun insert(item: CatalogItem)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<CatalogItem>)
@@ -36,24 +33,21 @@ interface CatalogDao {
     @Update
     suspend fun update(item: CatalogItem)
 
-    @Query("UPDATE catalog_items SET stockQty = stockQty - :qty, updatedAt = :now WHERE id = :id")
-    suspend fun decrementStock(id: Long, qty: Double, now: Long = System.currentTimeMillis())
+    @Query("UPDATE catalog_items SET stockBaseUnits = stockBaseUnits - :deltaBaseUnits, updatedAt = :now WHERE id = :id")
+    suspend fun decrementStock(id: String, deltaBaseUnits: Long, now: Long = System.currentTimeMillis())
 
-    @Query("""
-        UPDATE catalog_items 
-        SET flowSoldToday = CASE WHEN flowDate = :date THEN flowSoldToday + :qty ELSE :qty END,
-            flowDate = :date,
-            updatedAt = :now
-        WHERE id = :id
-    """)
-    suspend fun addFlowSale(id: Long, qty: Double, date: String, now: Long = System.currentTimeMillis())
+    @Query("UPDATE catalog_items SET stockBaseUnits = :newStockBaseUnits, updatedAt = :now WHERE id = :id")
+    suspend fun setStock(id: String, newStockBaseUnits: Long, now: Long = System.currentTimeMillis())
 
-    @Query("SELECT * FROM catalog_items WHERE inventoryType = 'STOCK' AND stockQty <= reorderThreshold AND isActive = 1")
+    @Query("UPDATE catalog_items SET reorderThresholdBaseUnits = :threshold, updatedAt = :now WHERE id = :id")
+    suspend fun updateReorderThreshold(id: String, threshold: Long, now: Long = System.currentTimeMillis())
+
+    @Query("SELECT * FROM catalog_items WHERE inventoryType = 'STOCK' AND stockBaseUnits <= reorderThresholdBaseUnits AND isActive = 1 AND deletedAt IS NULL")
     fun getLowStockItems(): Flow<List<CatalogItem>>
 
-    @Query("SELECT * FROM catalog_items WHERE inventoryType = 'FLOW' AND flowDate = :date AND isActive = 1")
-    suspend fun getFlowItemsForDate(date: String): List<CatalogItem>
+    @Query("UPDATE catalog_items SET deletedAt = :now, isActive = 0 WHERE id = :id")
+    suspend fun softDelete(id: String, now: Long = System.currentTimeMillis())
 
     @Query("DELETE FROM catalog_items WHERE id = :id")
-    suspend fun delete(id: Long)
+    suspend fun delete(id: String)
 }

@@ -4,23 +4,32 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.kiranaflow.app.util.UuidV7
 import kotlinx.serialization.Serializable
 
 /**
  * A committed bill / transaction.
- * Once written (via WAL), this record is immutable.
+ * All amounts stored as Long in paise.
  */
 @Serializable
-@Entity(tableName = "bills")
+@Entity(
+    tableName = "bills",
+    indices = [
+        Index("billNumber", unique = true),
+        Index("businessDate"),
+        Index("createdAt"),
+        Index("status")
+    ]
+)
 data class Bill(
-    @PrimaryKey(autoGenerate = true)
-    val id: Long = 0L,
+    @PrimaryKey
+    val id: String = UuidV7.generate(),
 
     /** Human-readable bill number e.g. "#1049" */
     val billNumber: String,
 
-    /** Total amount in ₹ */
-    val totalAmount: Double,
+    /** Total amount in paise */
+    val totalPaise: Long,
 
     /** Number of line items */
     val itemCount: Int,
@@ -28,26 +37,48 @@ data class Bill(
     /** Payment mode: CASH, UPI, QR */
     val paymentMode: PaymentMode = PaymentMode.CASH,
 
-    /** Amount tendered by customer */
-    val tenderedAmount: Double = 0.0,
+    /** Amount tendered by customer in paise */
+    val tenderedPaise: Long = 0L,
 
-    /** Change returned */
-    val changeAmount: Double = 0.0,
+    /** Change returned in paise */
+    val changePaise: Long = 0L,
 
     /** Bill status */
     val status: BillStatus = BillStatus.COMMITTED,
 
-    /** WAL sequence number for crash recovery */
-    val walSeq: Long = 0L,
+    /** Business date string "YYYY-MM-DD" */
+    val businessDate: String = "",
 
-    val createdAt: Long = System.currentTimeMillis()
-)
+    /** Terminal / Counter Device ID */
+    val deviceId: String = "DEV_01",
+
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val deletedAt: Long? = null
+) {
+    val totalAmount: Double get() = totalPaise / 100.0
+    val tenderedAmount: Double get() = tenderedPaise / 100.0
+    val changeAmount: Double get() = changePaise / 100.0
+
+    val total: Money get() = Money(totalPaise)
+    val tendered: Money get() = Money(tenderedPaise)
+    val change: Money get() = Money(changePaise)
+}
 
 @Serializable
-enum class PaymentMode { CASH, UPI, QR }
+enum class PaymentMode {
+    CASH,
+    UPI,
+    QR
+}
 
 @Serializable
-enum class BillStatus { PENDING, COMMITTED, FAILED }
+enum class BillStatus {
+    PENDING,
+    COMMITTED,
+    VOIDED,
+    FAILED
+}
 
 /**
  * A single line item in a bill.
@@ -63,18 +94,43 @@ enum class BillStatus { PENDING, COMMITTED, FAILED }
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index(value = ["billId"])]
+    indices = [
+        Index("billId"),
+        Index("catalogItemId"),
+        Index("createdAt")
+    ]
 )
 data class BillItem(
-    @PrimaryKey(autoGenerate = true)
-    val id: Long = 0L,
+    @PrimaryKey
+    val id: String = UuidV7.generate(),
 
-    val billId: Long,
-    val catalogItemId: Long,
+    val billId: String,
+
+    val catalogItemId: String,
+
     val itemName: String,
-    val quantity: Double,
-    val unit: String,
-    val pricePerUnit: Double,
-    val lineTotal: Double,
-    val inventoryType: InventoryType = InventoryType.STOCK
-)
+
+    /** Quantity in base units (grams, milliliters, pieces) */
+    val quantityBaseUnits: Long,
+
+    /** Display unit label e.g. "pcs", "kg", "L" */
+    val unit: String = "pcs",
+
+    /** Price per display unit in paise */
+    val pricePerUnitPaise: Long,
+
+    /** Line total in paise */
+    val lineTotalPaise: Long,
+
+    val inventoryType: InventoryType = InventoryType.STOCK,
+
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    val pricePerUnit: Double get() = pricePerUnitPaise / 100.0
+    val lineTotal: Double get() = lineTotalPaise / 100.0
+    val quantity: Double get() = when (unit.lowercase()) {
+        "kg", "l" -> quantityBaseUnits / 1000.0
+        "dozen" -> quantityBaseUnits / 12.0
+        else -> quantityBaseUnits.toDouble()
+    }
+}

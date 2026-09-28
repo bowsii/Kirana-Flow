@@ -32,6 +32,22 @@ object AppModule {
 
     @Singleton
     @Provides
+    fun provideJournalDao(db: KiranaFlowDatabase): com.kiranaflow.app.data.db.JournalDao = db.journalDao()
+
+    @Singleton
+    @Provides
+    fun provideStockMovementDao(db: KiranaFlowDatabase): com.kiranaflow.app.data.db.StockMovementDao = db.stockMovementDao()
+
+    @Singleton
+    @Provides
+    fun provideFlowDailyDao(db: KiranaFlowDatabase): com.kiranaflow.app.data.db.FlowDailyDao = db.flowDailyDao()
+
+    @Singleton
+    @Provides
+    fun provideDraftCartDao(db: KiranaFlowDatabase): com.kiranaflow.app.data.db.DraftCartDao = db.draftCartDao()
+
+    @Singleton
+    @Provides
     fun provideVibrator(@ApplicationContext ctx: Context): Vibrator {
         return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             val manager = ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager

@@ -345,7 +345,7 @@ private fun TenderBreakdownCard(cashAmount: Double, upiAmount: Double) {
 private fun StockItemCard(item: CatalogItem, onEdit: (CatalogItem) -> Unit) {
     val isStock = item.inventoryType == InventoryType.STOCK
     val tagColor = if (isStock) KfStockColor else KfFlowColor
-    val isLow = isStock && item.stockQty <= item.reorderThreshold
+    val isLow = isStock && item.stockBaseUnits <= item.reorderThresholdBaseUnits
 
     Surface(
         modifier = Modifier.fillMaxWidth().clickable { onEdit(item) },
@@ -369,12 +369,12 @@ private fun StockItemCard(item: CatalogItem, onEdit: (CatalogItem) -> Unit) {
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(item.name, color = KfTextDark, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("₹${item.price.toInt()} / ${item.unit}", color = KfTextLight, style = MaterialTheme.typography.bodySmall)
+                Text("${item.price.toFormattedString()} / ${item.unit}", color = KfTextLight, style = MaterialTheme.typography.bodySmall)
             }
             Column(horizontalAlignment = Alignment.End) {
                 if (isStock) {
                     Text("${item.stockQty.toInt()} left", color = if (isLow) KfError else KfTeal, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-                    Text("reorder < ${item.reorderThreshold.toInt()}", color = KfTextLight, style = MaterialTheme.typography.labelSmall)
+                    Text("reorder < ${(item.reorderThresholdBaseUnits / item.displayUnit.multiplierToBase.toDouble()).toInt()}", color = KfTextLight, style = MaterialTheme.typography.labelSmall)
                 } else {
                     Text("${item.flowSoldToday.toInt()} sold today", color = KfAmber, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
                     if (item.flowSoldToday > 0) Text("buy ${item.flowSoldToday.toInt()} tomorrow", color = KfTextLight, style = MaterialTheme.typography.labelSmall)
@@ -391,8 +391,8 @@ private fun StockItemCard(item: CatalogItem, onEdit: (CatalogItem) -> Unit) {
 @Composable
 private fun EditStockDialog(item: CatalogItem, onSave: (CatalogItem) -> Unit, onDismiss: () -> Unit) {
     var stockQty by remember { mutableStateOf(item.stockQty.toString()) }
-    var price    by remember { mutableStateOf(item.price.toString()) }
-    var reorder  by remember { mutableStateOf(item.reorderThreshold.toString()) }
+    var price    by remember { mutableStateOf((item.pricePaise / 100.0).toString()) }
+    var reorder  by remember { mutableStateOf((item.reorderThresholdBaseUnits / item.displayUnit.multiplierToBase.toDouble()).toString()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -410,7 +410,20 @@ private fun EditStockDialog(item: CatalogItem, onSave: (CatalogItem) -> Unit, on
         },
         confirmButton = {
             Button(
-                onClick = { onSave(item.copy(price = price.toDoubleOrNull() ?: item.price, stockQty = stockQty.toDoubleOrNull() ?: item.stockQty, reorderThreshold = reorder.toDoubleOrNull() ?: item.reorderThreshold, updatedAt = System.currentTimeMillis())) },
+                onClick = {
+                    val newPricePaise = (price.toDoubleOrNull()?.times(100.0)?.plus(0.5) ?: item.pricePaise.toDouble()).toLong()
+                    val newStockBaseUnits = (stockQty.toDoubleOrNull()?.times(item.displayUnit.multiplierToBase)?.plus(0.5) ?: item.stockBaseUnits.toDouble()).toLong()
+                    val newReorderBaseUnits = (reorder.toDoubleOrNull()?.times(item.displayUnit.multiplierToBase)?.plus(0.5) ?: item.reorderThresholdBaseUnits.toDouble()).toLong()
+
+                    onSave(
+                        item.copy(
+                            pricePaise = newPricePaise,
+                            stockBaseUnits = newStockBaseUnits,
+                            reorderThresholdBaseUnits = newReorderBaseUnits,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
+                },
                 colors  = ButtonDefaults.buttonColors(containerColor = KfTeal, contentColor = Color.White)
             ) { Text("Save", fontWeight = FontWeight.Bold) }
         },

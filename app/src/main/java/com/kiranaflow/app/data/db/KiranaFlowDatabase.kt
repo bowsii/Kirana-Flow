@@ -4,13 +4,22 @@ import android.content.Context
 import androidx.room.*
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.kiranaflow.app.data.model.*
+import com.kiranaflow.app.util.UuidV7
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 @Database(
-    entities = [CatalogItem::class, Bill::class, BillItem::class],
-    version = 1,
+    entities = [
+        CatalogItem::class,
+        Bill::class,
+        BillItem::class,
+        BillJournal::class,
+        StockMovement::class,
+        FlowDaily::class,
+        DraftCartEntity::class
+    ],
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -18,6 +27,10 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
 
     abstract fun catalogDao(): CatalogDao
     abstract fun billDao(): BillDao
+    abstract fun journalDao(): JournalDao
+    abstract fun stockMovementDao(): StockMovementDao
+    abstract fun flowDailyDao(): FlowDailyDao
+    abstract fun draftCartDao(): DraftCartDao
 
     companion object {
         @Volatile
@@ -30,12 +43,9 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
                     KiranaFlowDatabase::class.java,
                     "kiranaflow.db"
                 )
-                    // Room uses SQLite WAL mode by default for crash-safe commits
-                    .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)
-                            // Seed the database with sample kirana catalog
                             INSTANCE?.let { database ->
                                 CoroutineScope(Dispatchers.IO).launch {
                                     seedCatalog(database.catalogDao())
@@ -48,32 +58,175 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
             }
         }
 
-        /**
-         * Seeds the catalog with a realistic kirana shop inventory.
-         * STOCK: items that can be counted on the shelf.
-         * FLOW : perishables sold fresh daily.
-         */
-        private suspend fun seedCatalog(dao: CatalogDao) {
+        suspend fun seedCatalog(dao: CatalogDao) {
             val items = listOf(
-                // ── STOCK items ──
-                CatalogItem(name = "Parle-G",       aliases = """["parleg","parle g","paarle ji","biscuit"]""",   price = 5.0,   unit = "pcs",  inventoryType = InventoryType.STOCK, stockQty = 50.0, reorderThreshold = 10.0),
-                CatalogItem(name = "Good Day",      aliases = """["good day biscuit","goodday"]""",               price = 20.0,  unit = "pcs",  inventoryType = InventoryType.STOCK, stockQty = 30.0, reorderThreshold = 5.0),
-                CatalogItem(name = "Tata Salt 1kg", aliases = """["tata uppu","uppu","salt","tata salt"]""",       price = 22.0,  unit = "pcs",  inventoryType = InventoryType.STOCK, stockQty = 20.0, reorderThreshold = 3.0),
-                CatalogItem(name = "Amul Butter",   aliases = """["amul","butter","vennai"]""",                   price = 55.0,  unit = "pcs",  inventoryType = InventoryType.STOCK, stockQty = 15.0, reorderThreshold = 3.0),
-                CatalogItem(name = "Dettol Soap",   aliases = """["dettol","soap","saappu","dettol soap"]""",     price = 45.0,  unit = "pcs",  inventoryType = InventoryType.STOCK, stockQty = 25.0, reorderThreshold = 5.0),
-                CatalogItem(name = "Fortune Oil 1L",aliases = """["fortune","oil","ennai","cooking oil"]""",      price = 135.0, unit = "pcs",  inventoryType = InventoryType.STOCK, stockQty = 12.0, reorderThreshold = 3.0),
-                CatalogItem(name = "Aashirvaad Atta 5kg", aliases = """["atta","maavu","wheat","aashirvaad"]""", price = 249.0, unit = "pcs",  inventoryType = InventoryType.STOCK, stockQty = 8.0,  reorderThreshold = 2.0),
-                CatalogItem(name = "Maggi 70g",     aliases = """["maggi","noodles","nodules","magi"]""",         price = 14.0,  unit = "pcs",  inventoryType = InventoryType.STOCK, stockQty = 40.0, reorderThreshold = 10.0),
-                CatalogItem(name = "Colgate 100g",  aliases = """["colgate","toothpaste","paste","pallet"]""",   price = 65.0,  unit = "pcs",  inventoryType = InventoryType.STOCK, stockQty = 18.0, reorderThreshold = 4.0),
-                CatalogItem(name = "Vim Bar",       aliases = """["vim","dish soap","washing","vimbar"]""",      price = 10.0,  unit = "pcs",  inventoryType = InventoryType.STOCK, stockQty = 30.0, reorderThreshold = 5.0),
+                // ── STOCK items (Counted shelf goods) ──
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Parle-G",
+                    aliases = """["parleg","parle g","paarle ji","biscuit"]""",
+                    pricePaise = 500L,
+                    baseUnit = BaseUnitType.PIECE,
+                    displayUnit = DisplayUnit.PCS,
+                    inventoryType = InventoryType.STOCK,
+                    stockBaseUnits = 50L,
+                    reorderThresholdBaseUnits = 10L
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Good Day",
+                    aliases = """["good day biscuit","goodday"]""",
+                    pricePaise = 2000L,
+                    baseUnit = BaseUnitType.PIECE,
+                    displayUnit = DisplayUnit.PCS,
+                    inventoryType = InventoryType.STOCK,
+                    stockBaseUnits = 30L,
+                    reorderThresholdBaseUnits = 5L
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Tata Salt 1kg",
+                    aliases = """["tata uppu","uppu","salt","tata salt"]""",
+                    pricePaise = 2200L,
+                    baseUnit = BaseUnitType.PIECE,
+                    displayUnit = DisplayUnit.PACK,
+                    inventoryType = InventoryType.STOCK,
+                    stockBaseUnits = 20L,
+                    reorderThresholdBaseUnits = 3L
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Amul Butter",
+                    aliases = """["amul","butter","vennai"]""",
+                    pricePaise = 5500L,
+                    baseUnit = BaseUnitType.PIECE,
+                    displayUnit = DisplayUnit.PACK,
+                    inventoryType = InventoryType.STOCK,
+                    stockBaseUnits = 15L,
+                    reorderThresholdBaseUnits = 3L
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Dettol Soap",
+                    aliases = """["dettol","soap","saappu","dettol soap"]""",
+                    pricePaise = 4500L,
+                    baseUnit = BaseUnitType.PIECE,
+                    displayUnit = DisplayUnit.PCS,
+                    inventoryType = InventoryType.STOCK,
+                    stockBaseUnits = 25L,
+                    reorderThresholdBaseUnits = 5L
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Fortune Oil 1L",
+                    aliases = """["fortune","oil","ennai","cooking oil"]""",
+                    pricePaise = 13500L,
+                    baseUnit = BaseUnitType.MILLILITER,
+                    displayUnit = DisplayUnit.L,
+                    inventoryType = InventoryType.STOCK,
+                    stockBaseUnits = 12000L, // 12 liters
+                    reorderThresholdBaseUnits = 3000L
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Aashirvaad Atta 5kg",
+                    aliases = """["atta","maavu","wheat","aashirvaad"]""",
+                    pricePaise = 24900L,
+                    baseUnit = BaseUnitType.GRAM,
+                    displayUnit = DisplayUnit.PACK,
+                    inventoryType = InventoryType.STOCK,
+                    stockBaseUnits = 8L,
+                    reorderThresholdBaseUnits = 2L
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Maggi 70g",
+                    aliases = """["maggi","noodles","nodules","magi"]""",
+                    pricePaise = 1400L,
+                    baseUnit = BaseUnitType.PIECE,
+                    displayUnit = DisplayUnit.PACK,
+                    inventoryType = InventoryType.STOCK,
+                    stockBaseUnits = 40L,
+                    reorderThresholdBaseUnits = 10L
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Colgate 100g",
+                    aliases = """["colgate","toothpaste","paste","pallet"]""",
+                    pricePaise = 6500L,
+                    baseUnit = BaseUnitType.PIECE,
+                    displayUnit = DisplayUnit.PACK,
+                    inventoryType = InventoryType.STOCK,
+                    stockBaseUnits = 18L,
+                    reorderThresholdBaseUnits = 4L
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Vim Bar",
+                    aliases = """["vim","dish soap","washing","vimbar"]""",
+                    pricePaise = 1000L,
+                    baseUnit = BaseUnitType.PIECE,
+                    displayUnit = DisplayUnit.PCS,
+                    inventoryType = InventoryType.STOCK,
+                    stockBaseUnits = 30L,
+                    reorderThresholdBaseUnits = 5L
+                ),
 
-                // ── FLOW items ──
-                CatalogItem(name = "Amul Milk",     aliases = """["paal","milk","aavin","amul paal","liter paal","litre"]""", price = 28.0, unit = "L", inventoryType = InventoryType.FLOW),
-                CatalogItem(name = "Curd 500ml",    aliases = """["thayir","curd","yogurt","dahi"]""",           price = 30.0,  unit = "pcs",  inventoryType = InventoryType.FLOW),
-                CatalogItem(name = "Eggs",          aliases = """["muttai","egg","eggs","kozhi muttai"]""",      price = 7.0,   unit = "pcs",  inventoryType = InventoryType.FLOW),
-                CatalogItem(name = "Tomato 1kg",    aliases = """["thakkali","tomato","tomatoes"]""",            price = 40.0,  unit = "kg",   inventoryType = InventoryType.FLOW),
-                CatalogItem(name = "Onion 1kg",     aliases = """["vengayam","onion","onions","pyaz"]""",        price = 35.0,  unit = "kg",   inventoryType = InventoryType.FLOW),
-                CatalogItem(name = "Dal 1kg",       aliases = """["paruppu","dal","dhal","lentil"]""",           price = 90.0,  unit = "kg",   inventoryType = InventoryType.FLOW),
+                // ── FLOW items (Sold fresh daily) ──
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Amul Milk",
+                    aliases = """["paal","milk","aavin","amul paal","liter paal","litre"]""",
+                    pricePaise = 2800L,
+                    baseUnit = BaseUnitType.MILLILITER,
+                    displayUnit = DisplayUnit.L,
+                    inventoryType = InventoryType.FLOW
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Curd 500ml",
+                    aliases = """["thayir","curd","yogurt","dahi"]""",
+                    pricePaise = 3000L,
+                    baseUnit = BaseUnitType.PIECE,
+                    displayUnit = DisplayUnit.PACK,
+                    inventoryType = InventoryType.FLOW
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Eggs",
+                    aliases = """["muttai","egg","eggs","kozhi muttai"]""",
+                    pricePaise = 700L,
+                    baseUnit = BaseUnitType.PIECE,
+                    displayUnit = DisplayUnit.PCS,
+                    inventoryType = InventoryType.FLOW
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Tomato 1kg",
+                    aliases = """["thakkali","tomato","tomatoes"]""",
+                    pricePaise = 4000L,
+                    baseUnit = BaseUnitType.GRAM,
+                    displayUnit = DisplayUnit.KG,
+                    inventoryType = InventoryType.FLOW
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Onion 1kg",
+                    aliases = """["vengayam","onion","onions","pyaz"]""",
+                    pricePaise = 3500L,
+                    baseUnit = BaseUnitType.GRAM,
+                    displayUnit = DisplayUnit.KG,
+                    inventoryType = InventoryType.FLOW
+                ),
+                CatalogItem(
+                    id = UuidV7.generate(),
+                    name = "Dal 1kg",
+                    aliases = """["paruppu","dal","dhal","lentil"]""",
+                    pricePaise = 9000L,
+                    baseUnit = BaseUnitType.GRAM,
+                    displayUnit = DisplayUnit.KG,
+                    inventoryType = InventoryType.FLOW
+                )
             )
             dao.insertAll(items)
         }
@@ -98,4 +251,28 @@ class Converters {
 
     @TypeConverter
     fun toBillStatus(value: String): BillStatus = BillStatus.valueOf(value)
+
+    @TypeConverter
+    fun fromJournalStatus(status: JournalStatus): String = status.name
+
+    @TypeConverter
+    fun toJournalStatus(value: String): JournalStatus = JournalStatus.valueOf(value)
+
+    @TypeConverter
+    fun fromMovementReason(reason: MovementReason): String = reason.name
+
+    @TypeConverter
+    fun toMovementReason(value: String): MovementReason = MovementReason.valueOf(value)
+
+    @TypeConverter
+    fun fromBaseUnitType(type: BaseUnitType): String = type.name
+
+    @TypeConverter
+    fun toBaseUnitType(value: String): BaseUnitType = BaseUnitType.valueOf(value)
+
+    @TypeConverter
+    fun fromDisplayUnit(unit: DisplayUnit): String = unit.name
+
+    @TypeConverter
+    fun toDisplayUnit(value: String): DisplayUnit = DisplayUnit.valueOf(value)
 }

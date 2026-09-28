@@ -1,42 +1,67 @@
 package com.kiranaflow.app.service
 
-import com.kiranaflow.app.data.db.BillDao
-import com.kiranaflow.app.data.db.CatalogDao
+import androidx.room.withTransaction
+import com.kiranaflow.app.data.db.*
 import com.kiranaflow.app.data.model.*
+import com.kiranaflow.app.util.UuidV7
+import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * BillingQueue: serialised transaction queue with WAL recovery.
+ * Serialized transaction queue with durable WAL journal recovery.
  *
- * Flow:
- *   Cart lines → [commitBill()] → WAL (PENDING) → DB insert → inventory update → COMMITTED
- *
- * On app restart, [replayPendingBills()] finds any PENDING bills and completes them.
+ * Architecture:
+ * 1. Actor pattern: single-consumer Kotlin Channel scoped to Application.
+ * 2. Real commit log: Writes PENDING entry to `bill_journal` table first.
+ * 3. Atomic @Transaction: Inserts Bill, BillItems, StockMovements (ledger),
+ *    updates materialized CatalogItem stock, aggregates FlowDaily sales,
+ *    and marks journal APPLIED.
+ * 4. Idempotent crash recovery: Replays any PENDING journals on startup.
  */
 @Singleton
 class BillingQueue @Inject constructor(
+    private val db: KiranaFlowDatabase,
     private val billDao: BillDao,
-    private val catalogDao: CatalogDao
+    private val catalogDao: CatalogDao,
+    private val journalDao: JournalDao,
+    private val stockMovementDao: StockMovementDao,
+    private val flowDailyDao: FlowDailyDao,
+    private val draftCartDao: DraftCartDao,
+    private val businessDayManager: BusinessDayManager
 ) {
-    private val _processing = MutableStateFlow(false)
-    val isProcessing: Flow<Boolean> = _processing.asStateFlow()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val billCounter = AtomicInteger(1048)
 
-    private val walSeq = AtomicLong(0L)
     private val queue = Channel<BillCommitRequest>(capacity = Channel.UNLIMITED)
+    private val _commitResults = MutableSharedFlow<CommitResult>(replay = 1)
+    val commitResults: Flow<CommitResult> = _commitResults.asSharedFlow()
+
+    @Serializable
+    data class JournalPayload(
+        val billId: String,
+        val billNumber: String,
+        val cartLines: List<CartLine>,
+        val paymentMode: PaymentMode,
+        val tenderedPaise: Long,
+        val totalPaise: Long,
+        val businessDate: String,
+        val timestamp: Long
+    )
 
     data class BillCommitRequest(
         val cartLines: List<CartLine>,
         val paymentMode: PaymentMode,
-        val tenderedAmount: Double
+        val tenderedPaise: Long,
+        val responseChannel: CompletableDeferred<CommitResult>? = null
     )
 
     sealed class CommitResult {
@@ -44,93 +69,184 @@ class BillingQueue @Inject constructor(
         data class Failure(val reason: String) : CommitResult()
     }
 
-    // ─── Public API ─────────────────────────────────────────────────────────
+    init {
+        // Actor consumer loop
+        scope.launch {
+            for (request in queue) {
+                val result = processCommit(request)
+                _commitResults.emit(result)
+                request.responseChannel?.complete(result)
+            }
+        }
+
+        // On application start: Replay any uncommitted PENDING journal entries
+        scope.launch {
+            replayPendingJournals()
+        }
+    }
 
     /**
-     * Commit a cart to a bill. This is the "Bill potru" action.
-     * Writes a PENDING bill to WAL, then applies inventory changes,
-     * then marks the bill COMMITTED.
+     * Enqueue a bill commit request into the serial queue.
+     * UI gets a Flow of commit results or awaits the response.
+     */
+    suspend fun enqueueCommit(
+        cartLines: List<CartLine>,
+        paymentMode: PaymentMode = PaymentMode.CASH,
+        tenderedPaise: Long = 0L
+    ): CommitResult {
+        if (cartLines.isEmpty()) return CommitResult.Failure("Cart is empty")
+        val deferred = CompletableDeferred<CommitResult>()
+        queue.send(BillCommitRequest(cartLines, paymentMode, tenderedPaise, deferred))
+        return deferred.await()
+    }
+
+    /**
+     * Backwards compatible commitBill signature.
      */
     suspend fun commitBill(
         cartLines: List<CartLine>,
         paymentMode: PaymentMode = PaymentMode.CASH,
         tenderedAmount: Double = 0.0
     ): CommitResult {
-        if (cartLines.isEmpty()) return CommitResult.Failure("Cart is empty")
+        val tenderedPaise = (tenderedAmount * 100.0 + 0.5).toLong()
+        return enqueueCommit(cartLines, paymentMode, tenderedPaise)
+    }
 
-        _processing.value = true
+    private suspend fun processCommit(req: BillCommitRequest): CommitResult {
         return try {
-            val seq = walSeq.incrementAndGet()
-            val total = cartLines.sumOf { it.lineTotal }
+            val totalPaise = req.cartLines.sumOf { it.lineTotalPaise }
+            val billId = UuidV7.generate()
             val billNumber = generateBillNumber()
+            val now = System.currentTimeMillis()
+            val businessDate = businessDayManager.getBusinessDate(now)
 
-            // Step 1: Write PENDING bill to WAL (crash-safe)
-            val pendingBill = Bill(
-                billNumber    = billNumber,
-                totalAmount   = total,
-                itemCount     = cartLines.size,
-                paymentMode   = paymentMode,
-                tenderedAmount = tenderedAmount,
-                changeAmount  = (tenderedAmount - total).coerceAtLeast(0.0),
-                status        = BillStatus.PENDING,
-                walSeq        = seq
+            val payload = JournalPayload(
+                billId = billId,
+                billNumber = billNumber,
+                cartLines = req.cartLines,
+                paymentMode = req.paymentMode,
+                tenderedPaise = req.tenderedPaise,
+                totalPaise = totalPaise,
+                businessDate = businessDate,
+                timestamp = now
             )
-            val billId = billDao.insertBill(pendingBill)
+            val payloadJson = Json.encodeToString(payload)
 
-            // Step 2: Insert bill line items
-            val billItems = cartLines.map { line ->
-                BillItem(
-                    billId        = billId,
-                    catalogItemId = line.catalogItemId,
-                    itemName      = line.itemName,
-                    quantity      = line.quantity,
-                    unit          = line.unit,
-                    pricePerUnit  = line.pricePerUnit,
-                    lineTotal     = line.lineTotal,
-                    inventoryType = line.inventoryType
-                )
-            }
-            billDao.insertBillItems(billItems)
+            // Step 1: Write PENDING journal entry (fsync'd, own transaction)
+            val journalEntry = BillJournal(
+                journalId = UuidV7.generate(),
+                billId = billId,
+                payloadJson = payloadJson,
+                status = JournalStatus.PENDING,
+                createdAt = now
+            )
+            journalDao.insertJournal(journalEntry)
 
-            // Step 3: Update inventory
-            val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-            cartLines.forEach { line ->
-                when (line.inventoryType) {
-                    InventoryType.STOCK -> catalogDao.decrementStock(line.catalogItemId, line.quantity)
-                    InventoryType.FLOW  -> catalogDao.addFlowSale(line.catalogItemId, line.quantity, today)
-                }
-            }
+            // Step 2: Atomic @Transaction commit of Bill + BillItems + StockMovements + FlowDaily + mark APPLIED
+            val committedBill = applyJournalTransaction(journalEntry.journalId, payload)
 
-            // Step 4: Mark bill COMMITTED (WAL replay complete)
-            billDao.updateBill(pendingBill.copy(id = billId, status = BillStatus.COMMITTED))
+            // Step 3: Clear active draft cart
+            draftCartDao.clearDraft()
 
-            CommitResult.Success(pendingBill.copy(id = billId, status = BillStatus.COMMITTED))
-
+            CommitResult.Success(committedBill)
         } catch (e: Exception) {
-            CommitResult.Failure(e.message ?: "Unknown error")
-        } finally {
-            _processing.value = false
+            CommitResult.Failure(e.message ?: "Failed to commit bill")
         }
     }
 
     /**
-     * On app startup, replay any bills that were left PENDING (e.g. after a crash).
-     * This is the WAL recovery mechanism described in the README.
+     * Executes atomic Room transaction across all tables.
+     * Guaranteed idempotent by checking bill existence.
      */
-    suspend fun replayPendingBills() {
-        val pending = billDao.getPendingBills()
-        pending.forEach { bill ->
-            // A PENDING bill already has its items saved; just mark it COMMITTED
-            // and re-apply inventory if needed. For simplicity in v1, mark COMMITTED.
-            billDao.updateBill(bill.copy(status = BillStatus.COMMITTED))
+    suspend fun applyJournalTransaction(journalId: String, payload: JournalPayload): Bill {
+        return db.withTransaction {
+            val existingBill = billDao.getBillById(payload.billId)
+            if (existingBill != null) {
+                journalDao.markApplied(journalId)
+                return@withTransaction existingBill
+            }
+
+            val bill = Bill(
+                id = payload.billId,
+                billNumber = payload.billNumber,
+                totalPaise = payload.totalPaise,
+                itemCount = payload.cartLines.size,
+                paymentMode = payload.paymentMode,
+                tenderedPaise = payload.tenderedPaise,
+                changePaise = (payload.tenderedPaise - payload.totalPaise).coerceAtLeast(0L),
+                status = BillStatus.COMMITTED,
+                businessDate = payload.businessDate,
+                createdAt = payload.timestamp,
+                updatedAt = payload.timestamp
+            )
+            billDao.insertBill(bill)
+
+            val billItems = payload.cartLines.map { line ->
+                BillItem(
+                    id = UuidV7.generate(),
+                    billId = bill.id,
+                    catalogItemId = line.catalogItemId,
+                    itemName = line.itemName,
+                    quantityBaseUnits = line.quantityBaseUnits,
+                    unit = line.unit,
+                    pricePerUnitPaise = line.pricePerUnitPaise,
+                    lineTotalPaise = line.lineTotalPaise,
+                    inventoryType = line.inventoryType,
+                    createdAt = payload.timestamp
+                )
+            }
+            billDao.insertBillItems(billItems)
+
+            // Inventory movements & flow daily aggregations
+            payload.cartLines.forEach { line ->
+                when (line.inventoryType) {
+                    InventoryType.STOCK -> {
+                        val movement = StockMovement(
+                            id = UuidV7.generate(),
+                            itemId = line.catalogItemId,
+                            deltaBaseUnits = -line.quantityBaseUnits,
+                            reason = MovementReason.SALE,
+                            refId = bill.id,
+                            businessDate = payload.businessDate,
+                            createdAt = payload.timestamp
+                        )
+                        stockMovementDao.insertMovement(movement)
+                        catalogDao.decrementStock(line.catalogItemId, line.quantityBaseUnits, payload.timestamp)
+                    }
+                    InventoryType.FLOW -> {
+                        flowDailyDao.recordFlowSale(
+                            id = UuidV7.generate(),
+                            itemId = line.catalogItemId,
+                            businessDate = payload.businessDate,
+                            deltaBaseUnits = line.quantityBaseUnits,
+                            timestamp = payload.timestamp
+                        )
+                    }
+                }
+            }
+
+            // Mark journal entry as APPLIED
+            journalDao.markApplied(journalId, JournalStatus.APPLIED, System.currentTimeMillis())
+
+            bill
         }
     }
 
-    // ─── Helpers ────────────────────────────────────────────────────────────
+    /**
+     * Replays all PENDING journal entries idempotently on startup.
+     */
+    suspend fun replayPendingJournals() {
+        try {
+            val pendingList = journalDao.getJournalsByStatus(JournalStatus.PENDING)
+            for (entry in pendingList) {
+                val payload = Json.decodeFromString<JournalPayload>(entry.payloadJson)
+                applyJournalTransaction(entry.journalId, payload)
+            }
+        } catch (_: Exception) {}
+    }
 
     private fun generateBillNumber(): String {
-        val timestamp = System.currentTimeMillis()
-        val seq = (timestamp % 10000).toInt()
-        return "#%04d".format(seq)
+        val num = billCounter.incrementAndGet()
+        return "#%04d".format(num)
     }
 }

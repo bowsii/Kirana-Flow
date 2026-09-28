@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kiranaflow.app.data.model.*
 import com.kiranaflow.app.data.repository.KiranaRepository
+import com.kiranaflow.app.service.BillingQueue
 import com.kiranaflow.app.service.VoiceRecognitionService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -41,6 +42,14 @@ class BillingViewModel @Inject constructor(
         viewModelScope.launch {
             repository.getActiveCatalog().collect { items ->
                 _uiState.update { it.copy(catalog = items) }
+            }
+        }
+
+        // Restore active draft cart across crashes
+        viewModelScope.launch {
+            val draft = repository.loadDraftCart()
+            if (draft != null && draft.lines.isNotEmpty()) {
+                _uiState.update { it.copy(cart = draft) }
             }
         }
 
@@ -120,69 +129,89 @@ class BillingViewModel @Inject constructor(
             return
         }
 
-        val unit = command.unit ?: matched.unit
+        val rawUnit = command.unit ?: matched.unit
+        val displayUnit = DisplayUnit.fromString(rawUnit)
+        val quantityBaseUnits = Quantity.of(command.quantity, displayUnit).baseUnits
+
         val line = CartLine(
-            catalogItemId = matched.id,
-            itemName      = matched.name,
-            quantity      = command.quantity,
-            unit          = unit,
-            pricePerUnit  = matched.price,
-            inventoryType = matched.inventoryType
+            catalogItemId     = matched.id,
+            itemName          = matched.name,
+            quantityBaseUnits = quantityBaseUnits,
+            unit              = displayUnit.label,
+            pricePerUnitPaise = matched.pricePaise,
+            inventoryType     = matched.inventoryType
         )
 
         buzz(type = BuzzType.SUCCESS)
+        val updatedCart = _uiState.value.cart.addOrUpdate(line)
         _uiState.update { state ->
             state.copy(
-                cart            = state.cart.addOrUpdate(line),
+                cart            = updatedCart,
                 lastMatchedItem = matched,
                 lastError       = null,
                 voiceText       = ""
             )
         }
+        repository.saveDraftCart(updatedCart)
     }
 
     private fun handleRemoveLast() {
         buzz(type = BuzzType.LIGHT)
-        _uiState.update { it.copy(cart = it.cart.removeLast(), lastError = null) }
+        val updatedCart = _uiState.value.cart.removeLast()
+        _uiState.update { it.copy(cart = updatedCart, lastError = null) }
+        viewModelScope.launch {
+            repository.saveDraftCart(updatedCart)
+        }
     }
 
     // ─── Cart Actions (Manual UI) ────────────────────────────────────────────
 
     fun incrementItem(index: Int) {
-        _uiState.update { state ->
-            val lines = state.cart.lines.toMutableList()
-            if (index in lines.indices) {
-                lines[index] = lines[index].copy(quantity = lines[index].quantity + 1)
-            }
-            state.copy(cart = state.cart.copy(lines = lines))
+        val state = _uiState.value
+        val lines = state.cart.lines.toMutableList()
+        if (index in lines.indices) {
+            val current = lines[index]
+            val unit = DisplayUnit.fromString(current.unit)
+            val step = unit.multiplierToBase
+            lines[index] = current.copy(quantityBaseUnits = current.quantityBaseUnits + step)
+            val updatedCart = state.cart.copy(lines = lines)
+            _uiState.update { it.copy(cart = updatedCart) }
+            viewModelScope.launch { repository.saveDraftCart(updatedCart) }
         }
     }
 
     fun decrementItem(index: Int) {
-        _uiState.update { state ->
-            val lines = state.cart.lines.toMutableList()
-            if (index in lines.indices) {
-                val current = lines[index]
-                if (current.quantity > 1) {
-                    lines[index] = current.copy(quantity = current.quantity - 1)
-                } else {
-                    lines.removeAt(index)
-                }
+        val state = _uiState.value
+        val lines = state.cart.lines.toMutableList()
+        if (index in lines.indices) {
+            val current = lines[index]
+            val unit = DisplayUnit.fromString(current.unit)
+            val step = unit.multiplierToBase
+            if (current.quantityBaseUnits > step) {
+                lines[index] = current.copy(quantityBaseUnits = current.quantityBaseUnits - step)
+            } else {
+                lines.removeAt(index)
             }
-            state.copy(cart = state.cart.copy(lines = lines))
+            val updatedCart = state.cart.copy(lines = lines)
+            _uiState.update { it.copy(cart = updatedCart) }
+            viewModelScope.launch { repository.saveDraftCart(updatedCart) }
         }
     }
 
     fun removeItem(index: Int) {
-        _uiState.update { state ->
-            val lines = state.cart.lines.toMutableList()
-            if (index in lines.indices) lines.removeAt(index)
-            state.copy(cart = state.cart.copy(lines = lines))
+        val state = _uiState.value
+        val lines = state.cart.lines.toMutableList()
+        if (index in lines.indices) {
+            lines.removeAt(index)
+            val updatedCart = state.cart.copy(lines = lines)
+            _uiState.update { it.copy(cart = updatedCart) }
+            viewModelScope.launch { repository.saveDraftCart(updatedCart) }
         }
     }
 
     fun clearCart() {
         _uiState.update { it.copy(cart = Cart(), lastError = null) }
+        viewModelScope.launch { repository.clearDraftCart() }
     }
 
     // ─── Payment ─────────────────────────────────────────────────────────────
@@ -212,30 +241,30 @@ class BillingViewModel @Inject constructor(
             val state = _uiState.value
             _uiState.update { it.copy(isCommitting = true) }
 
-            val tendered = state.tenderedAmount.toDoubleOrNull()
-                ?: state.cart.totalAmount
+            val tenderedPaise = state.tenderedAmount.toDoubleOrNull()?.let { (it * 100.0 + 0.5).toLong() }
+                ?: state.cart.totalPaise
 
             val result = repository.commitBill(
-                cartLines      = state.cart.lines,
-                paymentMode    = state.paymentMode,
-                tenderedAmount = tendered
+                cartLines     = state.cart.lines,
+                paymentMode   = state.paymentMode,
+                tenderedPaise = tenderedPaise
             )
 
             when (result) {
-                is com.kiranaflow.app.service.BillingQueue.CommitResult.Success -> {
+                is BillingQueue.CommitResult.Success -> {
                     buzz(BuzzType.SUCCESS)
                     _uiState.update {
                         it.copy(
-                            cart           = Cart(),
-                            isCommitting   = false,
+                            cart             = Cart(),
+                            isCommitting     = false,
                             showPaymentSheet = false,
-                            commitSuccess  = true,
-                            lastError      = null,
-                            tenderedAmount = ""
+                            commitSuccess    = true,
+                            lastError        = null,
+                            tenderedAmount   = ""
                         )
                     }
                 }
-                is com.kiranaflow.app.service.BillingQueue.CommitResult.Failure -> {
+                is BillingQueue.CommitResult.Failure -> {
                     _uiState.update {
                         it.copy(isCommitting = false, lastError = result.reason)
                     }
@@ -269,7 +298,7 @@ class BillingViewModel @Inject constructor(
             } else {
                 vibrator.vibrate(80)
             }
-        } catch (e: Exception) { /* Vibrator not available in emulator */ }
+        } catch (_: Exception) { /* Vibrator not available in emulator */ }
     }
 
     override fun onCleared() {

@@ -3,37 +3,52 @@ package com.kiranaflow.app.data.model
 import kotlinx.serialization.Serializable
 
 /**
- * A single cart line, held in-memory until "Bill potru".
- * This is NOT a Room entity — it lives only in ViewModel state.
+ * A single cart line, held in-memory or persisted in draft_cart table.
  */
 @Serializable
 data class CartLine(
-    val catalogItemId: Long,
+    val catalogItemId: String,
     val itemName: String,
-    val quantity: Double,
+    val quantityBaseUnits: Long,
     val unit: String,
-    val pricePerUnit: Double,
+    val pricePerUnitPaise: Long,
     val inventoryType: InventoryType = InventoryType.STOCK,
 ) {
-    val lineTotal: Double get() = quantity * pricePerUnit
+    val quantity: Double get() = when (unit.lowercase()) {
+        "kg", "l" -> quantityBaseUnits / 1000.0
+        "dozen" -> quantityBaseUnits / 12.0
+        else -> quantityBaseUnits.toDouble()
+    }
+
+    val pricePerUnit: Double get() = pricePerUnitPaise / 100.0
+
+    val lineTotalPaise: Long get() = (quantity * pricePerUnitPaise + 0.5).toLong()
+    val lineTotal: Double get() = lineTotalPaise / 100.0
+    val totalMoney: Money get() = Money(lineTotalPaise)
 }
 
 /**
- * In-memory cart.
+ * In-memory / active draft cart.
  */
+@Serializable
 data class Cart(
     val lines: List<CartLine> = emptyList(),
     val isListening: Boolean = false,
     val lastVoiceText: String = ""
 ) {
-    val totalAmount: Double get() = lines.sumOf { it.lineTotal }
+    val totalPaise: Long get() = lines.sumOf { it.lineTotalPaise }
+    val totalAmount: Double get() = totalPaise / 100.0
+    val totalMoney: Money get() = Money(totalPaise)
     val itemCount: Int get() = lines.size
 
     fun addOrUpdate(line: CartLine): Cart {
         val existing = lines.indexOfFirst { it.catalogItemId == line.catalogItemId }
         return if (existing >= 0) {
             copy(lines = lines.toMutableList().also {
-                it[existing] = it[existing].copy(quantity = it[existing].quantity + line.quantity)
+                val current = it[existing]
+                it[existing] = current.copy(
+                    quantityBaseUnits = current.quantityBaseUnits + line.quantityBaseUnits
+                )
             })
         } else {
             copy(lines = lines + line)

@@ -87,4 +87,17 @@ class StockViewModel @Inject constructor(
             _uiState.update { it.copy(editingItem = null) }
         }
     }
+
+    fun updateReorderThreshold(item: CatalogItem, newThresholdDisplayUnits: Double) {
+        viewModelScope.launch {
+            val baseUnits = (newThresholdDisplayUnits * item.displayUnit.multiplierToBase + 0.5).toLong()
+            repository.updateReorderThreshold(item.id, baseUnits)
+        }
+    }
+
+    fun rebuildStock(item: CatalogItem) {
+        viewModelScope.launch {
+            repository.rebuildStockFromLedger(item.id)
+        }
+    }
 }
