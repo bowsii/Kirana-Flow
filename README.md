@@ -378,3 +378,22 @@ flowchart LR
 *Technology should fit the shopkeeper, not the other way around.*
 
 </div>
+
+## Build and release status
+
+This repository builds an Android app, not a web service. The `Dockerfile` provides a reproducible
+Android SDK 35 build environment and does not host a production endpoint. With JDK 17
+and Android SDK 35 installed, run `./gradlew testDebugUnitTest assembleDebug`;
+`docker build -t kiranaflow-build . && docker run --rm kiranaflow-build` does the
+same in a container. Debug APKs are for internal testing only. The GitHub Actions workflow is
+configured to run those checks on pushes and pull requests and to upload a debug
+APK as a workflow artifact if the build passes. No signing key is stored in the repo.
+
+For public release, use Google Play's internal-testing track first, then a staged
+rollout after testing on supported Android devices. This needs the owner's Play
+Console account, a release signing/upload key in GitHub Actions secrets, and Play
+listing/policy details; the debug artifact is **not** a deployable public release.
+The current speech recognizer requests offline recognition but does not bundle an
+offline speech model. Offline operation must be validated on target devices before
+claiming a fully offline production experience. Camera scanning and on-device
+Whisper/Gemma remain roadmap items, not implemented release features.

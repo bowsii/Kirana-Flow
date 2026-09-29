@@ -14,7 +14,7 @@ jobs:
   build-and-verify:
     name: Build, Test & Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
@@ -31,6 +31,9 @@ jobs:
 
       - name: Make gradlew executable
         run: chmod +x gradlew
+
+      - name: Install Android SDK 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'build-tools;34.0.0'
 
       - name: Run Detekt Static Analysis
         run: ./gradlew detekt
@@ -51,6 +54,14 @@ jobs:
 
       - name: Generate Kover Coverage Report
         run: ./gradlew koverXmlReportDebug koverHtmlReportDebug
+
+      - name: Upload Debug APK for internal evaluation
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: KiranaFlow-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
 
       - name: Upload Test Results
         if: always()
