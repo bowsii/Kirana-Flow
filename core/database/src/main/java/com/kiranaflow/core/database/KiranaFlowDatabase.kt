@@ -20,9 +20,10 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         BillJournal::class,
         StockMovement::class,
         FlowDaily::class,
-        DraftCartEntity::class
+        DraftCartEntity::class,
+        BillCounter::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -34,6 +35,7 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
     abstract fun stockMovementDao(): StockMovementDao
     abstract fun flowDailyDao(): FlowDailyDao
     abstract fun draftCartDao(): DraftCartDao
+    abstract fun billCounterDao(): BillCounterDao
 
     companion object {
         init {
@@ -138,6 +140,19 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : androidx.room.migration.Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `bill_counter` (
+                        `deviceId` TEXT NOT NULL,
+                        `lastSequence` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`deviceId`)
+                    )
+                """)
+            }
+        }
+
         fun getInstance(
             context: Context,
             securityManager: DatabaseSecurityManager = DatabaseSecurityManager(context.applicationContext)
@@ -151,7 +166,7 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
                     "kiranaflow.db"
                 )
                     .openHelperFactory(factory)
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)

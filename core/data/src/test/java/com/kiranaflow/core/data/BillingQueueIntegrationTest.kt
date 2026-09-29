@@ -29,6 +29,7 @@ class BillingQueueIntegrationTest {
     private lateinit var stockMovementDao: StockMovementDao
     private lateinit var flowDailyDao: FlowDailyDao
     private lateinit var draftCartDao: DraftCartDao
+    private lateinit var billCounterDao: BillCounterDao
     private lateinit var bdm: BusinessDayManager
     private lateinit var billingQueue: BillingQueue
     private lateinit var repository: KiranaRepository
@@ -66,6 +67,7 @@ class BillingQueueIntegrationTest {
         stockMovementDao = db.stockMovementDao()
         flowDailyDao = db.flowDailyDao()
         draftCartDao = db.draftCartDao()
+        billCounterDao = db.billCounterDao()
         bdm = BusinessDayManager()
 
         catalogDao.insert(stockItem)
@@ -73,7 +75,8 @@ class BillingQueueIntegrationTest {
 
         billingQueue = BillingQueue(
             db, billDao, catalogDao, journalDao,
-            stockMovementDao, flowDailyDao, draftCartDao, bdm
+            stockMovementDao, flowDailyDao, draftCartDao,
+            billCounterDao, bdm
         )
 
         repository = KiranaRepository(
@@ -492,5 +495,65 @@ class BillingQueueIntegrationTest {
             "Item must exit reorder list when restocked above threshold",
             afterRestockLowStock.any { it.id == biscuit.id }
         )
+    }
+
+    @Test
+    fun testSequentialBillNumbers_assignedPerDeviceInCommitTransaction() = runBlocking {
+        // Confirm initial sequence in bill_counter
+        val initialSeq = billCounterDao.getLastSequence("DEV_01") ?: 0L
+
+        // Commit bill 1
+        val res1 = billingQueue.enqueueCommit(
+            listOf(CartLine(stockItem.id, stockItem.name, 1L, stockItem.unit, stockItem.pricePaise, InventoryType.STOCK)),
+            PaymentMode.CASH,
+            500L
+        )
+        assertTrue(res1 is BillingQueue.CommitResult.Success)
+        val bill1 = (res1 as BillingQueue.CommitResult.Success).bill
+        val expectedSeq1 = initialSeq + 1L
+        assertEquals("#%04d".format(expectedSeq1), bill1.billNumber)
+
+        // Commit bill 2
+        val res2 = billingQueue.enqueueCommit(
+            listOf(CartLine(stockItem.id, stockItem.name, 2L, stockItem.unit, stockItem.pricePaise, InventoryType.STOCK)),
+            PaymentMode.UPI,
+            1000L
+        )
+        assertTrue(res2 is BillingQueue.CommitResult.Success)
+        val bill2 = (res2 as BillingQueue.CommitResult.Success).bill
+        val expectedSeq2 = initialSeq + 2L
+        assertEquals("#%04d".format(expectedSeq2), bill2.billNumber)
+
+        // Commit bill 3
+        val res3 = billingQueue.enqueueCommit(
+            listOf(CartLine(flowItem.id, flowItem.name, 500L, flowItem.unit, flowItem.pricePaise, InventoryType.FLOW)),
+            PaymentMode.CASH,
+            1400L
+        )
+        assertTrue(res3 is BillingQueue.CommitResult.Success)
+        val bill3 = (res3 as BillingQueue.CommitResult.Success).bill
+        val expectedSeq3 = initialSeq + 3L
+        assertEquals("#%04d".format(expectedSeq3), bill3.billNumber)
+
+        // Verify bill_counter table persisted lastSequence correctly
+        val finalSeq = billCounterDao.getLastSequence("DEV_01")
+        assertEquals(expectedSeq3, finalSeq)
+
+        // Replaying existing bill does NOT increment counter
+        val replayBill = billingQueue.applyJournalTransaction(
+            "fake_journal_id",
+            BillingQueue.JournalPayload(
+                billId = bill1.id, // already committed
+                billNumber = "ignored",
+                cartLines = emptyList(),
+                paymentMode = PaymentMode.CASH,
+                tenderedPaise = 500L,
+                totalPaise = 500L,
+                businessDate = bill1.businessDate,
+                timestamp = System.currentTimeMillis()
+            )
+        )
+        assertEquals(bill1.billNumber, replayBill.billNumber)
+        assertEquals(finalSeq, billCounterDao.getLastSequence("DEV_01"))
     }
 }

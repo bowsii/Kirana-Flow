@@ -36,6 +36,7 @@ class BillingQueue @Inject constructor(
     private val stockMovementDao: StockMovementDao,
     private val flowDailyDao: FlowDailyDao,
     private val draftCartDao: DraftCartDao,
+    private val billCounterDao: BillCounterDao,
     private val businessDayManager: BusinessDayManager
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -166,9 +167,14 @@ class BillingQueue @Inject constructor(
                 return@withTransaction existingBill
             }
 
+            // Assign sequential bill number per device inside commit transaction
+            val deviceId = "DEV_01"
+            val seq = billCounterDao.getNextSequence(deviceId)
+            val assignedBillNumber = "#%04d".format(seq)
+
             val bill = Bill(
                 id = payload.billId,
-                billNumber = payload.billNumber,
+                billNumber = assignedBillNumber,
                 totalPaise = payload.totalPaise,
                 itemCount = payload.cartLines.size,
                 paymentMode = payload.paymentMode,
@@ -176,6 +182,7 @@ class BillingQueue @Inject constructor(
                 changePaise = (payload.tenderedPaise - payload.totalPaise).coerceAtLeast(0L),
                 status = BillStatus.COMMITTED,
                 businessDate = payload.businessDate,
+                deviceId = deviceId,
                 createdAt = payload.timestamp,
                 updatedAt = payload.timestamp
             )
