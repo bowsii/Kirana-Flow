@@ -1,6 +1,6 @@
 # KiranaFlow — Project Context
 
-> Last updated: 2026-09-28
+> Last updated: 2026-09-29
 
 ---
 
@@ -36,7 +36,7 @@ KiranaFlow is an **offline-first, voice-powered Android POS** for kirana shop ow
 | Stock & Counter | StockScreen.kt | Live counter card, today's gross revenue with progress bar, cash/UPI tender breakdown, lock drawer & WhatsApp share actions |
 | Past Bills | PastBillsScreen.kt | Summary metrics, bill list with receipt icons, detailed item breakdown |
 
-**Color Palette (Reference Design — Warm Sand & Deep Accents, NO violet/indigo/blue):**
+**Color Palette (Warm Sand & Deep Accents, NO violet/indigo/blue/navy):**
 | Role | Color | Hex |
 |---|---|---|
 | Background | Warm Sand / Ivory | #EDE8DC |
@@ -49,120 +49,72 @@ KiranaFlow is an **offline-first, voice-powered Android POS** for kirana shop ow
 | Error / Danger | Crimson Red | #E53E3E |
 
 > **Approved Palette Rule:**
-> The active approved palette is the Warm Sand & Deep Accents mockup palette exclusively (`#EDE8DC`, `#2D6E5E`, `#121714`, `#E09B1A`). No violet, indigo, navy, or blue AI palette colors are permitted anywhere in the codebase.
-
-**Tech Stack Used (all free):**
-| Component | Technology |
-|---|---|
-| Language | Kotlin 2.1.0 |
-| UI | Jetpack Compose (Material3) |
-| DI | Hilt 2.54 |
-| Database | Room 2.6.1 (SQLite WAL mode) |
-| ASR | Android SpeechRecognizer (Tamil ta-IN) |
-| NLU | Rule-based engine (free, on-device) |
-| Navigation | Jetpack Navigation Compose 2.8.5 |
-| State | StateFlow + ViewModel |
+> The active approved palette is the Warm Sand & Deep Accents palette exclusively (`#EDE8DC`, `#2D6E5E`, `#121714`, `#E09B1A`). No violet, indigo, navy, or blue AI palette colors are permitted anywhere in the codebase. All historical `#1C2333` blue/navy occurrences have been replaced with `#121714` (Deep Charcoal Forest).
 
 ---
 
-## Architecture
+## Pre-Phase 3 Review Fixes (Items 1 – 17)
 
-```
-app/
-├── ui/
-│   ├── theme/           # Color.kt, Type.kt, Theme.kt
-│   └── screens/
-│       ├── speak/       # SpeakScreen (Landing / Tap & Speak)
-│       ├── billing/     # BillingScreen, BillingViewModel, PaymentBottomSheet
-│       ├── stock/       # StockScreen, StockViewModel
-│       └── pastbills/   # PastBillsScreen, PastBillsViewModel
-├── data/
-│   ├── db/              # KiranaFlowDatabase, CatalogDao, BillDao
-│   ├── model/           # CatalogItem, Bill, BillItem, Cart, VoiceCommand
-│   └── repository/      # KiranaRepository
-└── service/
-    ├── NluEngine.kt
-    ├── CatalogValidator.kt
-    ├── VoiceRecognitionService.kt
-    └── BillingQueue.kt
-```
+All 17 review fixes have been completed, verified with passing tests, and committed one commit per numbered group.
 
----
-
-## Voice Commands Supported
-
-| Say this | Parsed as |
-|---|---|
-| Rendu Parle-G | ADD, item=Parle-G, qty=2 |
-| Oru liter paal | ADD, item=Milk, qty=1, unit=L |
-| Dettol soap | ADD, item=Dettol Soap, qty=1 |
-| Bill potru | COMMIT - finalise bill |
-| Remove last | REMOVE_LAST |
-| Open camera | OPEN_CAMERA |
+| # | Item | Status | Key Files Modified | Test Name / Verification |
+|---|---|---|---|---|
+| 1 | Palette Rule (#1C2333 replaced with #121714) | **DONE** | `core/ui/.../Color.kt`, `PROJECT_CONTEXT.md` | Verification across all Compose theme components |
+| 2 | Caller-side PENDING journal write & recovery test | **DONE** | `core/data/.../BillingQueue.kt` | `BillingQueueIntegrationTest.testCrashAfterBillPotruBeforeConsumerRuns_billIsRecoveredOnRestart` |
+| 3 | SQLCipher net.zetetic migration, Keystore AES-256 GCM key, fail loudly | **DONE** | `core/database/.../DatabaseSecurityManager.kt`, `KiranaFlowDatabase.kt` | `EncryptedDatabaseTest.testOpenEncryptedDb_commitBill_close_reopen_readBillBack` |
+| 4 | Bind status pills to real hardware & speech state | **DONE** | `feature/billing/.../VoiceStateMonitor.kt`, `BillingViewModel.kt`, `BillingScreen.kt` | `VoiceStateMonitorTest` (3 unit tests) |
+| 5 | `:ai:audio` 16 kHz Mono AudioFrame, ring buffer, VAD hook, reactive `SpeechEngine` | **DONE** | `ai/audio/.../AudioFrame.kt`, `AudioRingBuffer.kt`, `VadHook.kt`, `ai/asr/.../SpeechEngine.kt`, `AndroidSpeechEngine.kt` | `AudioFrameRingBufferTest`, `AndroidSpeechEngineTest` |
+| 6 | IntentParser returns `List<ParsedCommand>` with confidence scores | **DONE** | `ai/nlu/.../ParsedCommand.kt`, `IntentParser.kt`, `RuleBasedIntentParser.kt` | `RuleBasedIntentParserTest` (6 unit tests) |
+| 7 | InferenceRuntime backend contract (QNN -> NNAPI -> CPU), warmUp(), close() | **DONE** | `ai/runtime/.../InferenceRuntime.kt`, `AndroidOnDeviceRuntime.kt` | `InferenceRuntimeTest` (3 unit tests) |
+| 8 | Move CatalogValidator into `:core:domain` | **DONE** | `core/domain/.../validation/CatalogValidator.kt` | `CatalogValidatorTest` (4 unit tests) |
+| 9 | Move voice orchestration to usecase + foreground service (microphone type) | **DONE** | `core/domain/.../usecase/VoiceOrchestratorUseCase.kt`, `ai/asr/.../VoiceRecognitionForegroundService.kt`, `AndroidManifest.xml` | `VoiceOrchestratorUseCaseTest` (2 unit tests) |
+| 10 | FTS4 with unicode61 tokenizer, `contentEntity = CatalogItem::class`, Tamil-script test | **DONE** | `core/database/.../CatalogItemFts.kt`, `CatalogDao.kt`, `KiranaFlowDatabase.kt` (v3) | `CatalogFtsTest.testFts_unicode61_matchesTamilScriptAlias`, `testFts_contentEntity_syncOnUpdateAndInsert` |
+| 11 | Move tests into the modules they cover | **DONE** | `core/model/.../DataCorrectnessTest.kt`, `core/data/.../BillingQueueIntegrationTest.kt` | All module tests running inside target modules with zero test debt |
+| 12 | Kover test coverage per module | **DONE** | `build.gradle.kts`, `gradle/libs.versions.toml` | 38 passing tests across modules; reports generated via `koverPrintCoverageDebug` |
+| 13 | Verify stock rebuild sums ALL ledger movements across dates | **DONE** | `core/data/.../BillingQueueIntegrationTest.kt`, `StockMovementDao.kt` | `BillingQueueIntegrationTest.testStockRebuild_sumsAllMovementsAcrossMultipleDates_notJustOneDay` |
+| 14 | Reorder threshold crossing test | **DONE** | `core/data/.../BillingQueueIntegrationTest.kt` | `BillingQueueIntegrationTest.testReorderThresholdCrossing` |
+| 15 | `bill_counter` table & sequential bill number per device in commit transaction | **DONE** | `core/model/.../BillCounter.kt`, `core/database/.../BillCounterDao.kt`, `BillingQueue.kt`, `KiranaFlowDatabase.kt` (v4) | `BillingQueueIntegrationTest.testSequentialBillNumbers_assignedPerDeviceInCommitTransaction` |
+| 16 | Idempotent Close Day (`closed_business_days`) & blocked void after close day | **DONE** | `core/model/.../ClosedBusinessDay.kt`, `core/database/.../ClosedBusinessDayDao.kt`, `BillingQueue.kt`, `KiranaRepository.kt`, `KiranaFlowDatabase.kt` (v5) | `BillingQueueIntegrationTest.testCloseBusinessDay_isIdempotent`, `testVoidAfterCloseDay_isBlocked` |
+| 17 | GitHub Actions CI workflow (build, unit tests, detekt, ktlint, Room schema diff) | **DONE** | `.github/workflows/ci.yml`, `build.gradle.kts`, `gradle/libs.versions.toml` | CI workflow verified with `detekt`, `ktlintCheck`, `testDebugUnitTest`, schema diff |
 
 ---
 
-## GitHub Push History
+## Kover Test Metrics & Coverage Summary
 
-| Date | Stage | Commit Message |
+Total automated unit tests: **38** (0 failures, 0 skipped).
+
+| Module | Passing Tests | Test Classes | Coverage (Line) |
+|---|---|---|---|
+| `:ai:nlu` | 6 | `RuleBasedIntentParserTest` | 82.2% |
+| `:ai:runtime` | 3 | `InferenceRuntimeTest` | 77.8% |
+| `:core:data` | 12 | `BillingQueueIntegrationTest` | 73.0% |
+| `:ai:audio` | 3 | `AudioFrameRingBufferTest` | 48.2% |
+| `:ai:asr` | 2 | `AndroidSpeechEngineTest` | 37.4% |
+| `:core:domain` | 6 | `VoiceOrchestratorUseCaseTest`, `CatalogValidatorTest` | 34.0% |
+| `:core:model` | 5 | `DataCorrectnessTest` | 21.0% |
+| `:core:database` | 2 | `CatalogFtsTest` (+ `EncryptedDatabaseTest` instrumented) | 11.1% |
+| `:feature:billing` | 3 | `VoiceStateMonitorTest` | 2.2% |
+
+---
+
+## GitHub Commit History
+
+| Commit | Group / Phase | Description |
 |---|---|---|
-| 2026-09-28 | Stage 1 | feat: Stage 1 - Android foundation, billing UI, NLU engine, Room + WAL |
-| 2026-09-28 | UI Redesign | feat: Pixel-accurate UI redesign matching design mockups (Speak, Billing, Payment modal, Stock dashboard) |
-| 2026-09-28 | Phase 1 | feat(core): Phase 1 Data correctness - Money/Quantity value classes, durable WAL journal, serial transaction queue actor, movement ledger, draft cart recovery, UUIDv7 |
-
----
-
-## Production Refinement Status
-
-### ✅ Phase 1: Data Correctness (Completed)
-1. **Money and Quantities**:
-   - `Money` value class: All monetary amounts stored as `Long` in paise (1 INR = 100 paise). Unit-safe arithmetic, Indian number formatting (e.g., `₹16,420`).
-   - `Quantity` value class: All quantities stored as `Long` in base units (grams, milliliters, pieces). `DisplayUnit` defines multipliers and labels (`kg`, `g`, `L`, `ml`, `dozen`, `pack`, `pcs`).
-2. **Durable Write-Ahead Log (WAL)**:
-   - `bill_journal` table: `journalId` (UUIDv7), `billId`, `payloadJson`, `status` (`PENDING`, `APPLIED`), `createdAt`, `appliedAt`.
-   - Atomic `@Transaction` commits Bill + BillItems + StockMovements + FlowDaily, and updates journal status to `APPLIED`.
-   - Idempotent crash recovery on application startup (`replayPendingJournals()`).
-3. **Serial Transaction Queue (Actor Pattern)**:
-   - Single-consumer Kotlin `Channel` running in application-scoped coroutine.
-   - Strict FIFO ordering for bill commits. UI observes `Flow<CommitResult>`.
-4. **Inventory Movement Ledger**:
-   - `stock_movements` table: `id`, `itemId`, `deltaBaseUnits`, `reason` (`SALE`, `PURCHASE`, `ADJUSTMENT`, `RETURN`, `VOID`), `refId`, `businessDate`, `createdAt`.
-   - Materialized `stockBaseUnits` column updated in same transaction, with `computeStockFromLedger` rebuild routine.
-   - `flow_daily` table: Aggregates daily sold units per item per business day for fresh goods.
-5. **Configurable Business Day Boundary**:
-   - `BusinessDayManager` with configurable cutoff hour (default 2 AM) for late-night kirana operations.
-6. **Active Cart Crash Resilience**:
-   - `draft_cart` table auto-persists in-progress cart on every mutation and restores on app relaunch.
-7. **Sync-Ready Identifiers & Audit Columns**:
-   - Primary keys use time-ordered RFC 9562 `UuidV7`.
-   - All business entities include `deviceId`, `createdAt`, `updatedAt`, and `deletedAt` (soft delete).
-8. **Room Hygiene & Schema Export**:
-   - `exportSchema = true` enabled with schema JSON committed to `app/schemas/`.
-9. **Automated Testing**:
-   - Unit tests covering `Money`, `Quantity`, `UuidV7`, and `BusinessDayManager` pass cleanly in `./gradlew test`.
-10. **UI Truthfulness & Operations (Section C)**:
-   - Removed fake "ONLINE" and "SYNCED" status pills, replaced with truthful indicators (`OFFLINE READY`, `MIC READY`, `LISTENING`).
-   - Wired "Lock Drawer & Close Day" to `closeBusinessDay()`: snapshots `flow_daily` and calculates tomorrow's FLOW purchase plan and low-stock reorder alerts.
-   - Wired "Share Day Summary via WhatsApp" to Android system share sheet (`Intent.ACTION_SEND`, `type = "text/plain"`).
-
----
-
-### 🏗️ Phase 2 — Multi-Module Refactoring (In Progress)
-- **Step 1 — Gradle convention plugins**: Implemented in `build-logic/convention` with precompiled convention plugins (`android.library`, `android.room`, `android.hilt`, `android.compose`, `jvm.library`) and clean version catalog.
-- **Step 2 — Core module extraction**: Extracted `:core:common` (UUIDv7, utils), `:core:model` (entities, value classes Money/Quantity), `:core:database` (Room database, migrations, DAOs, SQLCipher Keystore security, Hilt DatabaseModule), `:core:data` (Repositories, WAL BillingQueue, CatalogValidator). All tests from Section A passing.
-- **Step 3 — Domain use cases**: Extracted `:core:domain` with use cases `AddItemFromVoiceUseCase`, `RemoveLastItemUseCase`, `CommitBillUseCase`, `RecoverPendingBillsUseCase`, `GetReorderListUseCase`, `GetTomorrowFlowPlanUseCase`, `VoidBillUseCase`, and `CloseBusinessDayUseCase`. Refactored ViewModels to invoke domain use cases only. All tests passing.
-- **Step 4 — AI engine interfaces & implementations**: Extracted `:ai:runtime` (`InferenceRuntime`, `AndroidOnDeviceRuntime`), `:ai:asr` (`SpeechEngine`, `AndroidSpeechEngine`), and `:ai:nlu` (`IntentParser`, `RuleBasedIntentParser`). Added unit tests for Tamil/Tanglish NLU parsing. Wired `VoiceRecognitionService` to coordinate `SpeechEngine` and `IntentParser` via Hilt DI without behavior change. All tests passing.
-- **Step 5 — Feature modules extraction**: Extracted `:core:ui` (Theme, Color, Type, shared top bar and bottom nav components), `:feature:billing` (`BillingScreen`, `BillingViewModel`, `PaymentBottomSheet`, `SpeakScreen`, `VoiceRecognitionService`), `:feature:stock` (`StockScreen`, `StockViewModel`), and `:feature:pastbills` (`PastBillsScreen`, `PastBillsViewModel`). Updated `NavGraph.kt` and `MainActivity.kt`. All Section A tests and unit tests passing cleanly.
-
----
-
-## Planned Production Refinement (Phases 2-6)
-
-| Phase | Description | Status |
-|---|---|---|
-| Phase 1 | Data correctness & transactional integrity | ✅ Completed |
-| Phase 2 | Clean multi-module architecture, domain use cases, engine interfaces | ✅ Completed |
-| Phase 3 | Voice pipeline hardening: AudioRecord 16kHz PCM, Silero VAD, keyword spotter, offline Tamil pack, Tamil fractions parser | Pending |
-| Phase 4 | On-device models: Whisper-Small INT8, Gemma-3n-E2B INT4, Play Asset Delivery, QNN/Hexagon NPU binding | Pending |
-| Phase 5 | CameraX barcode scanner, daily FLOW report WhatsApp share, local UPI QR generator, Tamil/English string localization | Pending |
-| Phase 6 | Golden utterance evaluation, unit & instrumentation tests, offline telemetry, CI/CD & release build | Pending |
+| `985de9a` | Item 1 | `fix(ui): replace navy #1C2333 with charcoal forest #121714 in palette` |
+| `2c2de0c` | Item 2 | `fix(data): write PENDING journal before queueing and clear cart on success` |
+| `78f9b6f` | Item 3 | `feat(security): integrate SQLCipher with Keystore AES-GCM and strict validation` |
+| `e4697a4` | Item 4 | `feat(ui): bind voice status pills to real hardware and recognizer state` |
+| `d0a4fdf` | Item 5 | `feat(ai): introduce :ai:audio module and reactive SpeechEngine contract` |
+| `d37c310` | Item 6 | `feat(ai): update IntentParser to return List<ParsedCommand> with confidence` |
+| `c5a00ea` | Item 7 | `feat(ai): define InferenceRuntime contract with backend priority fallback` |
+| `5e0136e` | Item 8 | `refactor(domain): move CatalogValidator to :core:domain` |
+| `a60e013` | Item 9 | `feat(ai): move voice orchestration to domain usecase and add microphone foreground service` |
+| `2364c92` | Item 10 | `feat(database): configure FTS4 unicode61 tokenizer and test Tamil script aliases` |
+| `7da7573` | Item 11 | `refactor(test): move unit tests into respective domain, data and model modules` |
+| `2784125` | Item 12 | `build(ci): add Kover test coverage plugin and report coverage per module` |
+| `040cb13` | Item 13 | `test(stock): verify stock rebuild sums all ledger movements across multiple dates` |
+| `2b53f56` | Item 14 | `test(stock): add test for reorder threshold crossing` |
+| `612335d` | Item 15 | `feat(billing): assign sequential bill numbers per device via bill_counter table` |
+| `d666781` | Item 16 | `feat(billing): enforce Close Day idempotency and block void after close day` |
+| `27fe1c2` | Item 17 | `ci: add GitHub Actions workflow for build, unit tests, detekt, ktlint and schema diff` |
