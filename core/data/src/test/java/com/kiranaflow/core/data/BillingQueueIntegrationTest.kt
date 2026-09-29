@@ -441,4 +441,56 @@ class BillingQueueIntegrationTest {
         assertNotNull(reorderParleG)
         assertEquals(8L, reorderParleG?.stockBaseUnits)
     }
+
+    @Test
+    fun testReorderThresholdCrossing() = runBlocking {
+        val biscuit = CatalogItem(
+            id = "item_biscuit_threshold",
+            name = "Marie Gold",
+            pricePaise = 1000L,
+            baseUnit = BaseUnitType.PIECE,
+            displayUnit = DisplayUnit.PCS,
+            inventoryType = InventoryType.STOCK,
+            stockBaseUnits = 12L,
+            reorderThresholdBaseUnits = 10L
+        )
+        catalogDao.insert(biscuit)
+
+        // 1. Initially stock is 12 (> 10 threshold) -> NOT in low stock list
+        val initialLowStock = catalogDao.getLowStockItemsList()
+        assertFalse(
+            "Item with stock > threshold should not be in reorder list",
+            initialLowStock.any { it.id == biscuit.id }
+        )
+
+        // 2. Sell 3 units -> stock becomes 9, which crosses below the threshold (<= 10)
+        val commitRes = billingQueue.enqueueCommit(
+            listOf(CartLine(biscuit.id, biscuit.name, 3L, biscuit.unit, biscuit.pricePaise, InventoryType.STOCK)),
+            PaymentMode.CASH,
+            3000L
+        )
+        assertTrue(commitRes is BillingQueue.CommitResult.Success)
+
+        // Verify stock is now 9
+        val updated = catalogDao.getById(biscuit.id)
+        assertNotNull(updated)
+        assertEquals(9L, updated?.stockBaseUnits)
+
+        // 3. Confirm threshold crossing: item MUST appear in low stock / reorder list
+        val afterSaleLowStock = catalogDao.getLowStockItemsList()
+        val lowStockItem = afterSaleLowStock.find { it.id == biscuit.id }
+        assertNotNull("Item must appear in reorder list when stock crosses threshold", lowStockItem)
+        assertEquals(9L, lowStockItem?.stockBaseUnits)
+        assertEquals(10L, lowStockItem?.reorderThresholdBaseUnits)
+
+        // 4. Restock 20 units -> stock becomes 29 (> 10 threshold)
+        catalogDao.setStock(biscuit.id, 29L)
+
+        // 5. Item should no longer appear in low stock list
+        val afterRestockLowStock = catalogDao.getLowStockItemsList()
+        assertFalse(
+            "Item must exit reorder list when restocked above threshold",
+            afterRestockLowStock.any { it.id == biscuit.id }
+        )
+    }
 }
