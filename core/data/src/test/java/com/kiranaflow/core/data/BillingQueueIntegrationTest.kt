@@ -325,6 +325,53 @@ class BillingQueueIntegrationTest {
     }
 
     @Test
+    fun testStockRebuild_sumsAllMovementsAcrossMultipleDates_notJustOneDay() = runBlocking {
+        val itemId = "item_multi_day_stock"
+        val item = CatalogItem(
+            id = itemId,
+            name = "Sugar 1kg",
+            pricePaise = 4400L,
+            baseUnit = BaseUnitType.GRAM,
+            displayUnit = DisplayUnit.KG,
+            inventoryType = InventoryType.STOCK,
+            stockBaseUnits = 0L
+        )
+        catalogDao.insert(item)
+
+        // Day 1 (2026-09-25): Initial shipment +100 kg
+        stockMovementDao.insertMovement(
+            StockMovement(itemId = itemId, deltaBaseUnits = 100_000L, reason = MovementReason.PURCHASE, businessDate = "2026-09-25")
+        )
+        // Day 2 (2026-09-26): Sold -15 kg
+        stockMovementDao.insertMovement(
+            StockMovement(itemId = itemId, deltaBaseUnits = -15_000L, reason = MovementReason.SALE, businessDate = "2026-09-26")
+        )
+        // Day 3 (2026-09-27): Sold -20 kg
+        stockMovementDao.insertMovement(
+            StockMovement(itemId = itemId, deltaBaseUnits = -20_000L, reason = MovementReason.SALE, businessDate = "2026-09-27")
+        )
+        // Day 4 (2026-09-28): Restocked +50 kg, Spoilage -2 kg
+        stockMovementDao.insertMovement(
+            StockMovement(itemId = itemId, deltaBaseUnits = 50_000L, reason = MovementReason.PURCHASE, businessDate = "2026-09-28")
+        )
+        stockMovementDao.insertMovement(
+            StockMovement(itemId = itemId, deltaBaseUnits = -2_000L, reason = MovementReason.ADJUSTMENT, businessDate = "2026-09-28")
+        )
+        // Day 5 (Today 2026-09-29): Sold -10 kg
+        stockMovementDao.insertMovement(
+            StockMovement(itemId = itemId, deltaBaseUnits = -10_000L, reason = MovementReason.SALE, businessDate = "2026-09-29")
+        )
+
+        // Expected Net across ALL 5 days: 100 - 15 - 20 + 50 - 2 - 10 = 103 kg (103,000 grams)
+        val netStock = repository.rebuildStockFromLedger(itemId)
+        assertEquals(103_000L, netStock)
+
+        // Confirm database was updated
+        val updated = catalogDao.getById(itemId)
+        assertEquals(103_000L, updated?.stockBaseUnits)
+    }
+
+    @Test
     fun testVoidBill_writesReverseVoidMovementsAndDoesNotDelete() = runBlocking {
         val lines = listOf(
             CartLine(stockItem.id, stockItem.name, 4L, stockItem.unit, stockItem.pricePaise, InventoryType.STOCK)
