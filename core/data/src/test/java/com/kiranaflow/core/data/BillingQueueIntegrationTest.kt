@@ -1,4 +1,4 @@
-package com.kiranaflow.app.service
+package com.kiranaflow.core.data
 
 import android.content.Context
 import androidx.room.Room
