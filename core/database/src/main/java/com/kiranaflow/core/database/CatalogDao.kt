@@ -24,6 +24,14 @@ interface CatalogDao {
     """)
     suspend fun search(query: String): List<CatalogItem>
 
+    @Query("""
+        SELECT c.* FROM catalog_items c
+        JOIN catalog_items_fts fts ON c.rowid = fts.docid
+        WHERE catalog_items_fts MATCH :query AND c.isActive = 1 AND c.deletedAt IS NULL
+        ORDER BY c.name ASC
+    """)
+    suspend fun searchFts(query: String): List<CatalogItem>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(item: CatalogItem)
 

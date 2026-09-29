@@ -14,6 +14,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 @Database(
     entities = [
         CatalogItem::class,
+        CatalogItemFts::class,
         Bill::class,
         BillItem::class,
         BillJournal::class,
@@ -21,7 +22,7 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         FlowDaily::class,
         DraftCartEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -109,6 +110,34 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : androidx.room.migration.Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE VIRTUAL TABLE IF NOT EXISTS `catalog_items_fts` USING FTS4(
+                        `name` TEXT NOT NULL,
+                        `aliases` TEXT NOT NULL,
+                        content=`catalog_items`,
+                        tokenize=unicode61
+                    )
+                """)
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_catalog_items_fts_BEFORE_UPDATE BEFORE UPDATE ON `catalog_items` BEGIN DELETE FROM `catalog_items_fts` WHERE `docid` = OLD.`rowid`; END
+                """)
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_catalog_items_fts_BEFORE_DELETE BEFORE DELETE ON `catalog_items` BEGIN DELETE FROM `catalog_items_fts` WHERE `docid` = OLD.`rowid`; END
+                """)
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_catalog_items_fts_AFTER_UPDATE AFTER UPDATE ON `catalog_items` BEGIN INSERT INTO `catalog_items_fts`(`docid`, `name`, `aliases`) VALUES (NEW.`rowid`, NEW.`name`, NEW.`aliases`); END
+                """)
+                db.execSQL("""
+                    CREATE TRIGGER IF NOT EXISTS room_fts_content_sync_catalog_items_fts_AFTER_INSERT AFTER INSERT ON `catalog_items` BEGIN INSERT INTO `catalog_items_fts`(`docid`, `name`, `aliases`) VALUES (NEW.`rowid`, NEW.`name`, NEW.`aliases`); END
+                """)
+                db.execSQL("""
+                    INSERT INTO `catalog_items_fts`(`docid`, `name`, `aliases`) SELECT `rowid`, `name`, `aliases` FROM `catalog_items`
+                """)
+            }
+        }
+
         fun getInstance(
             context: Context,
             securityManager: DatabaseSecurityManager = DatabaseSecurityManager(context.applicationContext)
@@ -122,7 +151,7 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
                     "kiranaflow.db"
                 )
                     .openHelperFactory(factory)
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)
