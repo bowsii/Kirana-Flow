@@ -37,6 +37,7 @@ class BillingQueue @Inject constructor(
     private val flowDailyDao: FlowDailyDao,
     private val draftCartDao: DraftCartDao,
     private val billCounterDao: BillCounterDao,
+    private val closedBusinessDayDao: ClosedBusinessDayDao,
     private val businessDayManager: BusinessDayManager
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -263,6 +264,11 @@ class BillingQueue @Inject constructor(
         return db.withTransaction {
             val bill = billDao.getBillById(billId) ?: return@withTransaction false
             if (bill.status == BillStatus.VOIDED) return@withTransaction false
+
+            // Block void if the bill belongs to an already closed business day
+            if (closedBusinessDayDao.isDayClosed(bill.businessDate)) {
+                return@withTransaction false
+            }
 
             val items = billDao.getItemsForBill(billId)
             val now = System.currentTimeMillis()

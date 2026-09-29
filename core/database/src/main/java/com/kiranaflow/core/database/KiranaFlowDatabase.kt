@@ -21,9 +21,10 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
         StockMovement::class,
         FlowDaily::class,
         DraftCartEntity::class,
-        BillCounter::class
+        BillCounter::class,
+        ClosedBusinessDay::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -36,6 +37,7 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
     abstract fun flowDailyDao(): FlowDailyDao
     abstract fun draftCartDao(): DraftCartDao
     abstract fun billCounterDao(): BillCounterDao
+    abstract fun closedBusinessDayDao(): ClosedBusinessDayDao
 
     companion object {
         init {
@@ -153,6 +155,22 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `closed_business_days` (
+                        `businessDate` TEXT NOT NULL,
+                        `closedAt` INTEGER NOT NULL,
+                        `totalRevenuePaise` INTEGER NOT NULL,
+                        `totalBills` INTEGER NOT NULL,
+                        `cashRevenuePaise` INTEGER NOT NULL,
+                        `upiRevenuePaise` INTEGER NOT NULL,
+                        PRIMARY KEY(`businessDate`)
+                    )
+                """)
+            }
+        }
+
         fun getInstance(
             context: Context,
             securityManager: DatabaseSecurityManager = DatabaseSecurityManager(context.applicationContext)
@@ -166,7 +184,7 @@ abstract class KiranaFlowDatabase : RoomDatabase() {
                     "kiranaflow.db"
                 )
                     .openHelperFactory(factory)
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
                             super.onCreate(db)

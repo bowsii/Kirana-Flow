@@ -7,6 +7,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
+import com.kiranaflow.core.database.ClosedBusinessDayDao
+import com.kiranaflow.core.model.ClosedBusinessDay
 import javax.inject.Singleton
 
 @Singleton
@@ -17,6 +19,7 @@ class KiranaRepository @Inject constructor(
     private val draftCartDao: DraftCartDao,
     private val stockMovementDao: StockMovementDao,
     private val flowDailyDao: FlowDailyDao,
+    private val closedBusinessDayDao: ClosedBusinessDayDao,
     private val businessDayManager: BusinessDayManager
 ) {
 
@@ -113,12 +116,39 @@ class KiranaRepository @Inject constructor(
         catalogDao.getLowStockItemsList()
 
     suspend fun closeBusinessDay(businessDate: String = businessDayManager.getBusinessDate()): DaySummary {
+        val existingClosed = closedBusinessDayDao.getClosedDay(businessDate)
+        if (existingClosed != null) {
+            // Day already closed -> return idempotent snapshot
+            val flowPlan = getFlowPurchasePlan(businessDate)
+            val reorderList = getStockReorderList()
+            return DaySummary(
+                businessDate = existingClosed.businessDate,
+                totalRevenuePaise = existingClosed.totalRevenuePaise,
+                totalBills = existingClosed.totalBills,
+                cashRevenuePaise = existingClosed.cashRevenuePaise,
+                upiRevenuePaise = existingClosed.upiRevenuePaise,
+                flowPurchasePlan = flowPlan,
+                stockReorderList = reorderList
+            )
+        }
+
         val totalRevenuePaise = billDao.getRevenueForDate(businessDate)
         val cashRevenuePaise  = billDao.getCashRevenueForDate(businessDate)
         val upiRevenuePaise   = billDao.getUpiRevenueForDate(businessDate)
         val billCount         = billDao.getBillCountForDate(businessDate)
         val flowPlan          = getFlowPurchasePlan(businessDate)
         val reorderList       = getStockReorderList()
+
+        closedBusinessDayDao.insertClosedDay(
+            ClosedBusinessDay(
+                businessDate = businessDate,
+                closedAt = System.currentTimeMillis(),
+                totalRevenuePaise = totalRevenuePaise,
+                totalBills = billCount,
+                cashRevenuePaise = cashRevenuePaise,
+                upiRevenuePaise = upiRevenuePaise
+            )
+        )
 
         return DaySummary(
             businessDate      = businessDate,

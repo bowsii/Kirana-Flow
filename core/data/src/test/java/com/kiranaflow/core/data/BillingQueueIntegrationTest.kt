@@ -68,6 +68,7 @@ class BillingQueueIntegrationTest {
         flowDailyDao = db.flowDailyDao()
         draftCartDao = db.draftCartDao()
         billCounterDao = db.billCounterDao()
+        val closedBusinessDayDao = db.closedBusinessDayDao()
         bdm = BusinessDayManager()
 
         catalogDao.insert(stockItem)
@@ -76,12 +77,13 @@ class BillingQueueIntegrationTest {
         billingQueue = BillingQueue(
             db, billDao, catalogDao, journalDao,
             stockMovementDao, flowDailyDao, draftCartDao,
-            billCounterDao, bdm
+            billCounterDao, closedBusinessDayDao, bdm
         )
 
         repository = KiranaRepository(
             catalogDao, billDao, billingQueue,
-            draftCartDao, stockMovementDao, flowDailyDao, bdm
+            draftCartDao, stockMovementDao, flowDailyDao,
+            closedBusinessDayDao, bdm
         )
     }
 
@@ -555,5 +557,64 @@ class BillingQueueIntegrationTest {
         )
         assertEquals(bill1.billNumber, replayBill.billNumber)
         assertEquals(finalSeq, billCounterDao.getLastSequence("DEV_01"))
+    }
+
+    @Test
+    fun testCloseBusinessDay_isIdempotent() = runBlocking {
+        val date = "2026-09-29"
+        billingQueue.enqueueCommit(
+            listOf(CartLine(stockItem.id, stockItem.name, 2L, stockItem.unit, stockItem.pricePaise, InventoryType.STOCK)),
+            PaymentMode.CASH,
+            1000L
+        )
+
+        // First Close Day execution
+        val summary1 = repository.closeBusinessDay(date)
+        assertEquals(date, summary1.businessDate)
+        assertEquals(1000L, summary1.totalRevenuePaise)
+        assertEquals(1, summary1.totalBills)
+
+        // Second Close Day execution (idempotency check)
+        val summary2 = repository.closeBusinessDay(date)
+        assertEquals(summary1.businessDate, summary2.businessDate)
+        assertEquals(summary1.totalRevenuePaise, summary2.totalRevenuePaise)
+        assertEquals(summary1.totalBills, summary2.totalBills)
+        assertEquals(summary1.cashRevenuePaise, summary2.cashRevenuePaise)
+        assertEquals(summary1.upiRevenuePaise, summary2.upiRevenuePaise)
+
+        // Verify closed_business_days record exists and is unique
+        val closedDay = db.closedBusinessDayDao().getClosedDay(date)
+        assertNotNull(closedDay)
+        assertEquals(1000L, closedDay?.totalRevenuePaise)
+        assertEquals(1, closedDay?.totalBills)
+    }
+
+    @Test
+    fun testVoidAfterCloseDay_isBlocked() = runBlocking {
+        val date = "2026-09-29"
+        val commitRes = billingQueue.enqueueCommit(
+            listOf(CartLine(stockItem.id, stockItem.name, 3L, stockItem.unit, stockItem.pricePaise, InventoryType.STOCK)),
+            PaymentMode.CASH,
+            1500L
+        )
+        assertTrue(commitRes is BillingQueue.CommitResult.Success)
+        val billId = (commitRes as BillingQueue.CommitResult.Success).bill.id
+
+        // Stock was decremented: 50 - 3 = 47
+        assertEquals(47L, catalogDao.getById(stockItem.id)?.stockBaseUnits)
+
+        // Close the business day
+        repository.closeBusinessDay(date)
+        assertTrue(db.closedBusinessDayDao().isDayClosed(date))
+
+        // Attempt to void the bill after the day has been closed -> MUST BE BLOCKED
+        val voidResult = repository.voidBill(billId)
+        assertFalse("Void must be blocked after Close Day", voidResult)
+
+        // Bill remains COMMITTED and stock is NOT refunded
+        val bill = billDao.getBillById(billId)
+        assertNotNull(bill)
+        assertEquals(BillStatus.COMMITTED, bill?.status)
+        assertEquals(47L, catalogDao.getById(stockItem.id)?.stockBaseUnits)
     }
 }

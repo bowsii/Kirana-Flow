@@ -47,4 +47,8 @@ object DatabaseModule {
     @Singleton
     @Provides
     fun provideBillCounterDao(db: KiranaFlowDatabase): BillCounterDao = db.billCounterDao()
+
+    @Singleton
+    @Provides
+    fun provideClosedBusinessDayDao(db: KiranaFlowDatabase): ClosedBusinessDayDao = db.closedBusinessDayDao()
 }
