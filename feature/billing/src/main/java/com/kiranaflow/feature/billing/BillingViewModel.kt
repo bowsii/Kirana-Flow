@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import com.kiranaflow.core.model.*
 import com.kiranaflow.core.data.KiranaRepository
 import com.kiranaflow.core.data.BillingQueue
-import com.kiranaflow.feature.billing.service.VoiceRecognitionService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -16,6 +15,8 @@ import com.kiranaflow.core.domain.usecase.AddItemFromVoiceUseCase
 import com.kiranaflow.core.domain.usecase.CommitBillUseCase
 import com.kiranaflow.core.domain.usecase.RecoverPendingBillsUseCase
 import com.kiranaflow.core.domain.usecase.RemoveLastItemUseCase
+import com.kiranaflow.core.domain.usecase.VoiceOrchestratorUseCase
+import com.kiranaflow.core.domain.usecase.VoiceOrchestratorState
 
 data class BillingUiState(
     val cart: Cart = Cart(),
@@ -45,7 +46,7 @@ data class BillingUiState(
 @HiltViewModel
 class BillingViewModel @Inject constructor(
     private val repository: KiranaRepository,
-    private val voiceService: VoiceRecognitionService,
+    private val voiceOrchestrator: VoiceOrchestratorUseCase,
     private val voiceStateMonitor: VoiceStateMonitor,
     private val vibrator: Vibrator,
     private val addItemFromVoiceUseCase: AddItemFromVoiceUseCase,
@@ -75,7 +76,7 @@ class BillingViewModel @Inject constructor(
 
         // Observe voice recognition results
         viewModelScope.launch {
-            voiceService.state.collect { voiceState ->
+            voiceOrchestrator.state.collect { voiceState ->
                 handleVoiceState(voiceState)
             }
         }
@@ -108,11 +109,11 @@ class BillingViewModel @Inject constructor(
     fun toggleListening() {
         voiceStateMonitor.refreshStatus(_uiState.value.isListening)
         if (_uiState.value.isListening) {
-            voiceService.stopListening()
+            voiceOrchestrator.stopListening()
             voiceStateMonitor.setListening(false)
             _uiState.update { it.copy(isListening = false, voiceText = "") }
         } else {
-            voiceService.startListening()
+            voiceOrchestrator.startListening()
             voiceStateMonitor.setListening(true)
             _uiState.update { it.copy(isListening = true, lastError = null) }
         }
@@ -120,25 +121,25 @@ class BillingViewModel @Inject constructor(
 
     /** Used for demo / testing without a real microphone. */
     fun simulateVoice(text: String) {
-        voiceService.parseText(text)
+        voiceOrchestrator.parseText(text)
     }
 
-    private fun handleVoiceState(state: VoiceRecognitionService.VoiceState) {
+    private fun handleVoiceState(state: VoiceOrchestratorState) {
         when (state) {
-            is VoiceRecognitionService.VoiceState.Listening -> {
+            is VoiceOrchestratorState.Listening -> {
                 voiceStateMonitor.setListening(true)
                 _uiState.update { it.copy(isListening = true, voiceText = "Listening…") }
             }
-            is VoiceRecognitionService.VoiceState.Recognised -> {
+            is VoiceOrchestratorState.Recognised -> {
                 voiceStateMonitor.setListening(false)
                 _uiState.update { it.copy(isListening = false, voiceText = state.text) }
                 processCommand(state.command)
             }
-            is VoiceRecognitionService.VoiceState.Error -> {
+            is VoiceOrchestratorState.Error -> {
                 voiceStateMonitor.setListening(false)
                 _uiState.update { it.copy(isListening = false, lastError = state.message, voiceText = "") }
             }
-            VoiceRecognitionService.VoiceState.Idle -> {
+            VoiceOrchestratorState.Idle -> {
                 voiceStateMonitor.setListening(false)
                 _uiState.update { it.copy(isListening = false) }
             }
@@ -340,6 +341,6 @@ class BillingViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        voiceService.stopListening()
+        voiceOrchestrator.stopListening()
     }
 }

@@ -11,6 +11,9 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:model"))
     implementation(project(":core:data"))
+    implementation(project(":ai:asr"))
+    implementation(project(":ai:nlu"))
+    implementation(project(":ai:audio"))
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
