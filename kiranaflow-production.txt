@@ -1,0 +1,150 @@
+From 1a8966334f9170d49855a13eabba4ba6bbb4a40e Mon Sep 17 00:00:00 2001
+From: Bowsickdharan <bowsii@users.noreply.github.com>
+Date: Tue, 29 Sep 2026 10:33:04 +0530
+Subject: [PATCH] build: add portable Android build container and CI artifact
+
+---
+ .dockerignore            |  9 +++++++++
+ .github/workflows/ci.yml | 13 ++++++++++++-
+ .gitignore               |  2 ++
+ Dockerfile               | 22 ++++++++++++++++++++++
+ README.md                | 19 +++++++++++++++++++
+ gradle.properties        |  7 ++++---
+ 6 files changed, 68 insertions(+), 4 deletions(-)
+ create mode 100644 .dockerignore
+ create mode 100644 Dockerfile
+
+diff --git a/.dockerignore b/.dockerignore
+new file mode 100644
+index 0000000..2659c51
+--- /dev/null
++++ b/.dockerignore
+@@ -0,0 +1,9 @@
++.git
++.gradle
++**/.gradle
++**/build
++.idea
++local.properties
++*.apk
++*.aab
++*.keystore
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index e879939..33e1e20 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -14,7 +14,7 @@ jobs:
+   build-and-verify:
+     name: Build, Test & Lint
+     runs-on: ubuntu-latest
+-    timeout-minutes: 25
++    timeout-minutes: 45
+ 
+     steps:
+       - name: Checkout repository
+@@ -32,6 +32,9 @@ jobs:
+       - name: Make gradlew executable
+         run: chmod +x gradlew
+ 
++      - name: Install Android SDK 35
++        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'build-tools;34.0.0'
++
+       - name: Run Detekt Static Analysis
+         run: ./gradlew detekt
+ 
+@@ -52,6 +55,14 @@ jobs:
+       - name: Generate Kover Coverage Report
+         run: ./gradlew koverXmlReportDebug koverHtmlReportDebug
+ 
++      - name: Upload Debug APK for internal evaluation
++        if: success()
++        uses: actions/upload-artifact@v4
++        with:
++          name: KiranaFlow-debug
++          path: app/build/outputs/apk/debug/*.apk
++          if-no-files-found: error
++
+       - name: Upload Test Results
+         if: always()
+         uses: actions/upload-artifact@v4
+diff --git a/.gitignore b/.gitignore
+index 9c58f76..662759b 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -19,3 +19,5 @@ local.properties
+ *.aab
+ *.keystore
+ !debug.keystore
++
++.kotlin/
+diff --git a/Dockerfile b/Dockerfile
+new file mode 100644
+index 0000000..3c0caad
+--- /dev/null
++++ b/Dockerfile
+@@ -0,0 +1,22 @@
++# Reproducible Android build environment, not an app server.
++FROM eclipse-temurin:17-jdk-jammy
++
++ARG ANDROID_CMDLINE_TOOLS=13114758
++ENV ANDROID_HOME=/opt/android-sdk \
++    ANDROID_SDK_ROOT=/opt/android-sdk \
++    PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:$PATH
++
++RUN apt-get update && apt-get install -y --no-install-recommends curl unzip \
++    && rm -rf /var/lib/apt/lists/* \
++    && mkdir -p "$ANDROID_HOME/cmdline-tools" \
++    && curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS}_latest.zip" -o /tmp/tools.zip \
++    && unzip -q /tmp/tools.zip -d /tmp/android-tools \
++    && mv /tmp/android-tools/cmdline-tools "$ANDROID_HOME/cmdline-tools/latest" \
++    && rm -rf /tmp/tools.zip /tmp/android-tools \
++    && yes | sdkmanager --licenses >/dev/null \
++    && sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'build-tools;34.0.0' 'platform-tools'
++
++WORKDIR /workspace
++COPY . .
++RUN chmod +x ./gradlew
++CMD ["./gradlew", "testDebugUnitTest", "assembleDebug", "--no-daemon", "--console=plain"]
+diff --git a/README.md b/README.md
+index 1de8fef..a762133 100644
+--- a/README.md
++++ b/README.md
+@@ -378,3 +378,22 @@ flowchart LR
+ *Technology should fit the shopkeeper, not the other way around.*
+ 
+ </div>
++
++## Build and release status
++
++This repository builds an Android app, not a web service. The `Dockerfile` provides a reproducible
++Android SDK 35 build environment and does not host a production endpoint. With JDK 17
++and Android SDK 35 installed, run `./gradlew testDebugUnitTest assembleDebug`;
++`docker build -t kiranaflow-build . && docker run --rm kiranaflow-build` does the
++same in a container. Debug APKs are for internal testing only. The GitHub Actions workflow is
++configured to run those checks on pushes and pull requests and to upload a debug
++APK as a workflow artifact if the build passes. No signing key is stored in the repo.
++
++For public release, use Google Play's internal-testing track first, then a staged
++rollout after testing on supported Android devices. This needs the owner's Play
++Console account, a release signing/upload key in GitHub Actions secrets, and Play
++listing/policy details; the debug artifact is **not** a deployable public release.
++The current speech recognizer requests offline recognition but does not bundle an
++offline speech model. Offline operation must be validated on target devices before
++claiming a fully offline production experience. Camera scanning and on-device
++Whisper/Gemma remain roadmap items, not implemented release features.
+diff --git a/gradle.properties b/gradle.properties
+index 376a708..42db05e 100644
+--- a/gradle.properties
++++ b/gradle.properties
+@@ -1,4 +1,5 @@
+ android.useAndroidX=true
+-org.gradle.java.home=/home/bowsiii/.jdks/temurin-21
+-org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+-kotlin.daemon.jvmargs=-Xmx1024m
++org.gradle.jvmargs=-Xmx768m -Dfile.encoding=UTF-8
++kotlin.daemon.jvmargs=-Xmx384m
++org.gradle.workers.max=1
++kotlin.compiler.execution.strategy=in-process
+-- 
+2.34.1
+

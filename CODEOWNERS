@@ -1,0 +1,18 @@
+# CODEOWNERS — KiranaFlow
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# Global owner: every PR requires at least one approval from this account.
+* @bowsii
+
+# CI / CD workflow changes require an additional sign-off from the same owner.
+.github/                    @bowsii
+Dockerfile                  @bowsii
+build-logic/                @bowsii
+
+# Financial / audit-critical modules: any change requires explicit review.
+core/data/                  @bowsii
+core/database/              @bowsii
+core/domain/                @bowsii
+
+# Security-sensitive: encryption key management.
+core/database/src/main/java/com/kiranaflow/core/database/DatabaseSecurityManager.kt @bowsii

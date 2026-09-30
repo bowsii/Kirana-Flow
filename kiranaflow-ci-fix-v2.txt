@@ -1,0 +1,26 @@
+From 6a6ae07142902cc4cc52dc598ed69ae5aa0ef976 Mon Sep 17 00:00:00 2001
+From: Bowsickdharan <bowsii@users.noreply.github.com>
+Date: Tue, 29 Sep 2026 11:11:30 +0530
+Subject: [PATCH] ci: set up Android SDK tools before sdkmanager
+
+---
+ .github/workflows/ci.yml | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 33e1e20..bd93daa 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -32,6 +32,9 @@ jobs:
+       - name: Make gradlew executable
+         run: chmod +x gradlew
+ 
++      - name: Set up Android SDK tools
++        uses: android-actions/setup-android@v4
++
+       - name: Install Android SDK 35
+         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'build-tools;34.0.0'
+ 
+-- 
+2.34.1
+
